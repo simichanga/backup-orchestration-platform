@@ -24,12 +24,20 @@ type stubPlugin struct {
 	restoreErr error
 	tempDir    string
 
+	// blockUntilCtxDone makes Backup block on ctx instead of returning
+	// immediately, to exercise JobTimeout cancellation.
+	blockUntilCtxDone bool
+
 	restoreCalls int
 }
 
-func (p *stubPlugin) Discover() ([]core.Resource, error) { return p.resources, nil }
+func (p *stubPlugin) Discover(context.Context) ([]core.Resource, error) { return p.resources, nil }
 
-func (p *stubPlugin) Backup(res core.Resource) (core.Artifact, error) {
+func (p *stubPlugin) Backup(ctx context.Context, res core.Resource) (core.Artifact, error) {
+	if p.blockUntilCtxDone {
+		<-ctx.Done()
+		return core.Artifact{}, ctx.Err()
+	}
 	if err := p.backupErr[res.ID]; err != nil {
 		return core.Artifact{}, err
 	}
@@ -41,13 +49,13 @@ func (p *stubPlugin) Backup(res core.Resource) (core.Artifact, error) {
 	return core.Artifact{ResourceID: res.ID, Path: path, Size: int64(len(content)), CreatedAt: time.Now()}, nil
 }
 
-func (p *stubPlugin) Restore(core.Artifact) error {
+func (p *stubPlugin) Restore(context.Context, core.Artifact) error {
 	p.restoreCalls++
 	return p.restoreErr
 }
 
-func (p *stubPlugin) Verify(core.Artifact) error { return p.verifyErr }
-func (p *stubPlugin) Health() error              { return nil }
+func (p *stubPlugin) Verify(context.Context, core.Artifact) error { return p.verifyErr }
+func (p *stubPlugin) Health(context.Context) error                { return nil }
 func (p *stubPlugin) Metadata() core.PluginMetadata {
 	return core.PluginMetadata{Name: "stub", Version: "test"}
 }
@@ -66,7 +74,7 @@ func newStubStorage() *stubStorage {
 	return &stubStorage{stored: make(map[core.SnapshotID]core.Artifact)}
 }
 
-func (s *stubStorage) Store(a core.Artifact) (core.SnapshotID, error) {
+func (s *stubStorage) Store(_ context.Context, a core.Artifact) (core.SnapshotID, error) {
 	if s.storeErr != nil {
 		return "", s.storeErr
 	}
@@ -75,11 +83,11 @@ func (s *stubStorage) Store(a core.Artifact) (core.SnapshotID, error) {
 	return id, nil
 }
 
-func (s *stubStorage) Retrieve(core.SnapshotID, core.Artifact) error { return nil }
-func (s *stubStorage) Verify(core.SnapshotID) error                  { return s.verifyErr }
-func (s *stubStorage) Delete(core.SnapshotID) error                  { return nil }
-func (s *stubStorage) Snapshots() ([]core.Snapshot, error)           { return nil, nil }
-func (s *stubStorage) ApplyRetention(core.Policy) error {
+func (s *stubStorage) Retrieve(context.Context, core.SnapshotID, core.Artifact) error { return nil }
+func (s *stubStorage) Verify(context.Context, core.SnapshotID) error                  { return s.verifyErr }
+func (s *stubStorage) Delete(context.Context, core.SnapshotID) error                  { return nil }
+func (s *stubStorage) Snapshots(context.Context) ([]core.Snapshot, error)             { return nil, nil }
+func (s *stubStorage) ApplyRetention(context.Context, core.Policy) error {
 	s.retentionCall++
 	return s.retentionErr
 }
@@ -105,7 +113,7 @@ func setup(t *testing.T, p *stubPlugin, s *stubStorage, inv *inventory.Inventory
 	}
 	t.Cleanup(func() { md.Close() })
 
-	c := New(inv, md, s, core.Verification{Enabled: false}, t.TempDir())
+	c := New(inv, md, s, core.Verification{Enabled: false}, t.TempDir(), 0)
 	c.RegisterPlugin("postgres", func(inventory.Server, *inventory.PluginConfig) (plugin.BackupPlugin, error) {
 		return p, nil
 	})
@@ -282,5 +290,44 @@ func TestRunJobUsesPerHostVerificationOverride(t *testing.T) {
 
 	if p.restoreCalls != 1 {
 		t.Errorf("plugin.Restore called %d times, want 1 (per-host verification override was enabled)", p.restoreCalls)
+	}
+}
+
+func TestRunJobRespectsJobTimeout(t *testing.T) {
+	p := &stubPlugin{
+		resources:         []core.Resource{{ID: "myapp"}},
+		blockUntilCtxDone: true,
+		tempDir:           t.TempDir(),
+	}
+	s := newStubStorage()
+	c, md := setup(t, p, s, testInventory(nil))
+	c.JobTimeout = 20 * time.Millisecond
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	start := time.Now()
+	err := c.RunJob(ctx, job)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatalf("RunJob: expected an error from job_timeout expiring, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("RunJob error = %v, want context.DeadlineExceeded in the chain", err)
+	}
+	if elapsed > time.Second {
+		t.Errorf("RunJob took %v, want it to return promptly after JobTimeout (20ms) - the plugin call was not actually cancelled", elapsed)
+	}
+
+	got, err := md.GetJob(ctx, "job-1")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.Status != core.JobStatusFailed {
+		t.Errorf("job status = %q, want failed", got.Status)
 	}
 }

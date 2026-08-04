@@ -40,18 +40,20 @@ type Controller struct {
 	Storage      storage.StorageProvider
 	Verification core.Verification // global default
 	TempDir      string
-	Logger       *slog.Logger // optional; defaults to slog.Default()
+	JobTimeout   time.Duration // 0 means no per-job deadline
+	Logger       *slog.Logger  // optional; defaults to slog.Default()
 
 	factories map[string]PluginFactory
 }
 
-func New(inv *inventory.Inventory, md *metadata.Store, sp storage.StorageProvider, verification core.Verification, tempDir string) *Controller {
+func New(inv *inventory.Inventory, md *metadata.Store, sp storage.StorageProvider, verification core.Verification, tempDir string, jobTimeout time.Duration) *Controller {
 	return &Controller{
 		Inventory:    inv,
 		Metadata:     md,
 		Storage:      sp,
 		Verification: verification,
 		TempDir:      tempDir,
+		JobTimeout:   jobTimeout,
 		factories:    make(map[string]PluginFactory),
 	}
 }
@@ -91,14 +93,40 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 		return fmt.Errorf("controller: mark job %s in_progress: %w", job.ID, err)
 	}
 
-	if err := c.runPipeline(ctx, job, srv, factory); err != nil {
-		if uerr := c.Metadata.UpdateJobStatus(ctx, job.ID, core.JobStatusFailed); uerr != nil {
-			return fmt.Errorf("controller: job %s failed (%w); additionally failed to record failure: %v", job.ID, err, uerr)
-		}
-		return fmt.Errorf("controller: job %s failed: %w", job.ID, err)
+	pipelineCtx := ctx
+	if c.JobTimeout > 0 {
+		var cancel context.CancelFunc
+		pipelineCtx, cancel = context.WithTimeout(ctx, c.JobTimeout)
+		defer cancel()
 	}
 
-	return c.Metadata.UpdateJobStatus(ctx, job.ID, core.JobStatusCompleted)
+	pipelineErr := c.runPipeline(pipelineCtx, job, srv, factory)
+
+	finalStatus := core.JobStatusCompleted
+	if pipelineErr != nil {
+		finalStatus = core.JobStatusFailed
+	}
+
+	// A fresh, short-lived context, deliberately not pipelineCtx: a job
+	// that failed because its own JobTimeout expired must still be able to
+	// record that failure. Using the same (already expired) context here
+	// would make that write fail too, leaving the job stuck in_progress
+	// until the next controller restart notices via FailOrphanedJobs -
+	// which exists for crash recovery, not for routine timeouts.
+	recordCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := c.Metadata.UpdateJobStatus(recordCtx, job.ID, finalStatus); err != nil {
+		if pipelineErr != nil {
+			return fmt.Errorf("controller: job %s failed (%w); additionally failed to record failure: %v", job.ID, pipelineErr, err)
+		}
+		return fmt.Errorf("controller: mark job %s completed: %w", job.ID, err)
+	}
+
+	if pipelineErr != nil {
+		return fmt.Errorf("controller: job %s failed: %w", job.ID, pipelineErr)
+	}
+	return nil
 }
 
 // runPipeline discovers resources and backs each up independently: one
@@ -112,7 +140,7 @@ func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventor
 		return fmt.Errorf("instantiate plugin %q: %w", job.Plugin, err)
 	}
 
-	resources, err := p.Discover()
+	resources, err := p.Discover(ctx)
 	if err != nil {
 		return fmt.Errorf("discover on %q: %w", job.Host, err)
 	}
@@ -128,7 +156,7 @@ func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventor
 
 	// Retention is a per-job step, not per-resource: run it once after all
 	// resources have been attempted, regardless of individual outcomes.
-	if err := c.Storage.ApplyRetention(job.Policy); err != nil {
+	if err := c.Storage.ApplyRetention(ctx, job.Policy); err != nil {
 		errs = append(errs, fmt.Errorf("apply retention: %w", err))
 	}
 
@@ -141,7 +169,7 @@ func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventor
 // backupResource runs one resource through Backup, Verify, checksum, Store,
 // metadata recording, storage-level Verify, and the optional restore test.
 func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.BackupPlugin, res core.Resource, verification core.Verification) error {
-	artifact, err := p.Backup(res)
+	artifact, err := p.Backup(ctx, res)
 	if err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
@@ -151,7 +179,7 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 	// loud, so it isn't allowed to depend on the happy path.
 	defer c.cleanupArtifact(artifact)
 
-	if err := p.Verify(artifact); err != nil {
+	if err := p.Verify(ctx, artifact); err != nil {
 		return fmt.Errorf("verify artifact: %w", err)
 	}
 
@@ -164,9 +192,18 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 	// Encryption is deferred: no key management story exists yet (open
 	// decision, see project notes) - artifact.Encrypted stays false.
 
-	snapshotID, err := c.Storage.Store(artifact)
+	snapshotID, err := c.Storage.Store(ctx, artifact)
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
+	}
+
+	// Verify before recording: a snapshot that fails its integrity check
+	// must never appear in ListSnapshots looking like a good one. If this
+	// fails, the artifact may still physically exist in the repository,
+	// untracked by our metadata - acceptable for Phase 1, since the
+	// alternative (recording an unverified snapshot as trustworthy) is worse.
+	if err := c.Storage.Verify(ctx, snapshotID); err != nil {
+		return fmt.Errorf("storage verify: %w", err)
 	}
 
 	snap := core.Snapshot{
@@ -182,13 +219,9 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 		return fmt.Errorf("record snapshot: %w", err)
 	}
 
-	if err := c.Storage.Verify(snapshotID); err != nil {
-		return fmt.Errorf("storage verify: %w", err)
-	}
-
 	if verification.Enabled {
 		target := core.Artifact{ResourceID: res.ID, Path: filepath.Join(verification.TargetDir, res.ID)}
-		if err := p.Restore(target); err != nil {
+		if err := p.Restore(ctx, target); err != nil {
 			return fmt.Errorf("restore test: %w", err)
 		}
 	}
