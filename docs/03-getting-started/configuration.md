@@ -92,13 +92,16 @@ BOP_CONTROLLER_CONCURRENCY=6
 
 ## CLI Flags
 
-Flags take highest precedence. Example:
+Flags take highest precedence over the config file and environment
+variables. Today that's just one flag, present on every subcommand:
 
 ```bash
-bop controller --config custom.yaml --log-level debug
+bop controller --config /etc/bop/config.yaml
 ```
 
-Run bop controller --help for all flags.
+There is no `--log-level` (or other per-key) flag yet - set
+`logging.level` in `config.yaml` or via `BOP_LOGGING_LEVEL` instead. Run
+`bop controller --help` for the current flag list.
 
 ## Inventory File Structure
 
