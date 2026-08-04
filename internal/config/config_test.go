@@ -41,6 +41,9 @@ storage:
 	if cfg.Verification.Enabled {
 		t.Errorf("Verification.Enabled = true, want false")
 	}
+	if cfg.SSH.KnownHostsFile != "/etc/bop/known_hosts" {
+		t.Errorf("SSH.KnownHostsFile = %q, want /etc/bop/known_hosts", cfg.SSH.KnownHostsFile)
+	}
 }
 
 func TestLoadEnvOverride(t *testing.T) {

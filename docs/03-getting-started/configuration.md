@@ -31,6 +31,14 @@ controller:
 scheduler:
   cron_location: "Local"     # Timezone for cron expressions
 
+# SSH host key verification for the postgres and filesystem plugins.
+# Every connection is checked against known_hosts_file - there is no
+# insecure/skip-verification option. Populate it the same way you would
+# for the ssh CLI, e.g.:
+#   ssh-keyscan -H your-host >> /etc/bop/known_hosts
+ssh:
+  known_hosts_file: /etc/bop/known_hosts
+
 # Metadata database
 metadata:
   driver: sqlite             # "sqlite" or "postgres"

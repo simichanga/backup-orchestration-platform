@@ -96,8 +96,8 @@ func buildApp(configPath string) (*app, error) {
 		Logger:      logger,
 	}
 
-	ctl.RegisterPlugin("postgres", postgres.NewFactory())
-	ctl.RegisterPlugin("filesystem", filesystem.NewFactory())
+	ctl.RegisterPlugin("postgres", postgres.NewFactory(cfg.SSH.KnownHostsFile))
+	ctl.RegisterPlugin("filesystem", filesystem.NewFactory(cfg.SSH.KnownHostsFile))
 
 	q := queue.NewMemory(queueCapacity)
 

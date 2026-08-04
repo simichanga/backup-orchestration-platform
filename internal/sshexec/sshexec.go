@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 // Executor abstracts running a command on the target host and capturing
@@ -33,6 +34,14 @@ type SSHExecutor struct {
 	Addr    string // host:port
 	User    string
 	KeyPath string
+	// KnownHostsFile is an OpenSSH known_hosts-format file (config.yaml's
+	// ssh.known_hosts_file) verified against every connection. There is no
+	// insecure fallback: a host absent from this file, or present with a
+	// different key than the one the target actually presents (a possible
+	// MITM), is a connection error, not a silent accept. Operators add a
+	// host's key with e.g. `ssh-keyscan -H <host> >> known_hosts` before
+	// BOP can connect to it - the same trust model `ssh` itself uses.
+	KnownHostsFile string
 }
 
 func (e *SSHExecutor) Run(ctx context.Context, command string, stdin io.Reader, stdout io.Writer) error {
@@ -45,14 +54,15 @@ func (e *SSHExecutor) Run(ctx context.Context, command string, stdin io.Reader, 
 		return fmt.Errorf("parse ssh key %s: %w", e.KeyPath, err)
 	}
 
+	hostKeyCallback, err := knownhosts.New(e.KnownHostsFile)
+	if err != nil {
+		return fmt.Errorf("load known_hosts file %s: %w (add this host's key first, e.g. via ssh-keyscan)", e.KnownHostsFile, err)
+	}
+
 	config := &ssh.ClientConfig{
-		User: e.User,
-		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		// SECURITY (deferred, Phase 1 gap): accepts any host key, which is
-		// a MITM risk. No known_hosts verification exists yet - see
-		// project notes' deferred-decisions list. Must be fixed before any
-		// deployment outside a fully trusted network.
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		User:            e.User,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: hostKeyCallback,
 		Timeout:         10 * time.Second,
 	}
 

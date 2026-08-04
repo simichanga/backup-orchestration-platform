@@ -21,6 +21,7 @@ type Config struct {
 	Storage      StorageConfig     `mapstructure:"storage"`
 	Controller   ControllerConfig  `mapstructure:"controller"`
 	Scheduler    SchedulerConfig   `mapstructure:"scheduler"`
+	SSH          SSHConfig         `mapstructure:"ssh"`
 	Metadata     MetadataConfig    `mapstructure:"metadata"`
 	API          APIConfig         `mapstructure:"api"`
 	Metrics      MetricsConfig     `mapstructure:"metrics"`
@@ -50,6 +51,13 @@ type ControllerConfig struct {
 
 type SchedulerConfig struct {
 	CronLocation string `mapstructure:"cron_location"`
+}
+
+// SSHConfig governs how plugin.SSH-based plugins (postgres, filesystem)
+// verify the hosts they connect to. There is no "insecure" toggle: every
+// connection is checked against KnownHostsFile (see internal/sshexec).
+type SSHConfig struct {
+	KnownHostsFile string `mapstructure:"known_hosts_file"`
 }
 
 type MetadataConfig struct {
@@ -97,6 +105,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("controller.temp_dir", "/tmp/bop")
 
 	v.SetDefault("scheduler.cron_location", "Local")
+
+	v.SetDefault("ssh.known_hosts_file", "/etc/bop/known_hosts")
 
 	v.SetDefault("metadata.driver", "sqlite")
 	v.SetDefault("metadata.dsn", "/var/lib/bop/metadata.db")

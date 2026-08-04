@@ -34,8 +34,9 @@ type Plugin struct {
 
 // NewFactory returns a controller.PluginFactory-compatible factory that
 // builds a filesystem Plugin from a server's inventory entry and this
-// plugin's config block.
-func NewFactory() func(srv inventory.Server, cfg *inventory.PluginConfig, tempDir string) (plugin.BackupPlugin, error) {
+// plugin's config block. knownHostsFile is config.yaml's
+// ssh.known_hosts_file, verified on every connection (see internal/sshexec).
+func NewFactory(knownHostsFile string) func(srv inventory.Server, cfg *inventory.PluginConfig, tempDir string) (plugin.BackupPlugin, error) {
 	return func(srv inventory.Server, cfg *inventory.PluginConfig, tempDir string) (plugin.BackupPlugin, error) {
 		fsCfg, err := parseConfig(cfg)
 		if err != nil {
@@ -49,7 +50,7 @@ func NewFactory() func(srv inventory.Server, cfg *inventory.PluginConfig, tempDi
 		}
 
 		return &Plugin{
-			exec:    &sshexec.SSHExecutor{Addr: srv.Host + ":22", User: srv.SSHUser, KeyPath: srv.SSHKey},
+			exec:    &sshexec.SSHExecutor{Addr: srv.Host + ":22", User: srv.SSHUser, KeyPath: srv.SSHKey, KnownHostsFile: knownHostsFile},
 			cfg:     fsCfg,
 			tempDir: tempDir,
 		}, nil
