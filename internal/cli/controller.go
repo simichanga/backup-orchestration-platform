@@ -1,23 +1,27 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"bop/internal/metrics"
 	"bop/internal/scheduler"
 )
 
 // newControllerCmd runs the controller daemon: loads inventory, registers
-// plugins, starts the scheduler, and runs a single serial consumer that
-// drains the queue. Shuts down cleanly on SIGINT/SIGTERM - a job in
-// progress at shutdown ends up failed, not stuck in_progress (see
-// controller.RunJob's recordCtx handling), consistent with the crash
-// recovery model rather than needing a separate code path for it.
+// plugins, starts the metrics HTTP server and scheduler, and runs a single
+// serial consumer that drains the queue. Shuts down cleanly on
+// SIGINT/SIGTERM - a job in progress at shutdown ends up failed, not stuck
+// in_progress (see controller.RunJob's recordCtx handling), consistent
+// with the crash recovery model rather than needing a separate code path
+// for it.
 func newControllerCmd(configPath *string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "controller",
@@ -44,6 +48,20 @@ func newControllerCmd(configPath *string) *cobra.Command {
 				return fmt.Errorf("reconcile queued jobs: %w", err)
 			}
 
+			metricsAddr := fmt.Sprintf(":%d", a.Config.Metrics.Port)
+			metricsServer, err := metrics.NewServer(metricsAddr, a.Config.Metrics.Path, a.MetricsRegistry)
+			if err != nil {
+				return fmt.Errorf("start metrics server: %w", err)
+			}
+			metricsErrCh := metricsServer.Start()
+			defer func() {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+					a.Logger.Warn("metrics server shutdown", "error", err)
+				}
+			}()
+
 			sched, err := scheduler.New(a.Inventory, a.Metadata, a.Queue, a.Controller.Events, a.Config.Scheduler.CronLocation, a.Logger)
 			if err != nil {
 				return fmt.Errorf("build scheduler: %w", err)
@@ -51,17 +69,33 @@ func newControllerCmd(configPath *string) *cobra.Command {
 			sched.Start()
 			defer sched.Stop()
 
+			// runCtx, not ctx directly: the consumer must also stop if the
+			// metrics server dies unexpectedly (metricsErrCh fires), not
+			// only on a signal. Using ctx directly here would deadlock
+			// wg.Wait() below in that case, since the consumer only reacts
+			// to context cancellation, and ctx itself would still be live.
+			runCtx, cancelRun := context.WithCancel(ctx)
+			defer cancelRun()
+
 			var wg sync.WaitGroup
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				a.runConsumer(ctx)
+				a.runConsumer(runCtx)
 			}()
 
-			a.Logger.Info("bop controller ready", "inventory_hosts", len(a.Inventory.Servers))
+			a.Logger.Info("bop controller ready",
+				"inventory_hosts", len(a.Inventory.Servers),
+				"metrics_addr", metricsServer.Addr(),
+				"metrics_path", a.Config.Metrics.Path)
 
-			<-ctx.Done()
-			a.Logger.Info("shutting down")
+			select {
+			case <-ctx.Done():
+				a.Logger.Info("shutting down")
+			case err := <-metricsErrCh:
+				a.Logger.Error("metrics server exited unexpectedly", "error", err)
+			}
+			cancelRun()
 			wg.Wait()
 			return nil
 		},

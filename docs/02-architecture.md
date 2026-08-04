@@ -168,6 +168,21 @@ Events are written to a log and pushed to subscribers (e.g., a notification
 system, metrics pipeline, or audit trail). They require zero extra engineering
 inside plugins – the controller emits them automatically.
 
+**Phase 1 implementation notes**: the documented core backup pipeline
+(see the Scalability Model diagram) includes a `Metrics/Events` step at
+every phase, so `internal/metrics` is Phase 1 scope, not deferred.
+`metrics.Publisher` is exactly another `events.Publisher` subscriber
+alongside `LogPublisher`, wired into the same `events.Multi` fan-out - so,
+per the paragraph above, recording metrics needed zero extra
+instrumentation calls inside the controller or plugins. It exposes
+`bop_jobs_total{host,plugin,status}`, `bop_job_duration_seconds{host,plugin}`,
+`bop_artifacts_created_total{host,plugin}`, `bop_retention_applied_total{host}`,
+and `bop_restore_verifications_completed_total{host,plugin}` on
+`metrics.port`/`metrics.path` (default `:9090/metrics`), served by
+`bop controller` for as long as it runs - one-shot commands (`bop backup`,
+etc.) still record into a registry, but nothing serves it since the
+process exits immediately after.
+
 ## Backup Job Lifecycle
 
 Every backup passes through the same pipeline, enforced by the controller:

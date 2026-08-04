@@ -10,11 +10,15 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"bop/internal/config"
 	"bop/internal/controller"
 	"bop/internal/core"
+	"bop/internal/events"
 	"bop/internal/inventory"
 	"bop/internal/metadata"
+	"bop/internal/metrics"
 	"bop/internal/plugin/filesystem"
 	"bop/internal/plugin/postgres"
 	"bop/internal/queue"
@@ -29,12 +33,13 @@ const queueCapacity = 256
 
 // app bundles everything a command needs. Callers must call Close when done.
 type app struct {
-	Config     *config.Config
-	Inventory  *inventory.Inventory
-	Metadata   *metadata.Store
-	Queue      queue.Queue
-	Controller *controller.Controller
-	Logger     *slog.Logger
+	Config          *config.Config
+	Inventory       *inventory.Inventory
+	Metadata        *metadata.Store
+	Queue           queue.Queue
+	Controller      *controller.Controller
+	MetricsRegistry *prometheus.Registry
+	Logger          *slog.Logger
 }
 
 func (a *app) Close() error {
@@ -79,12 +84,24 @@ func buildApp(configPath string) (*app, error) {
 
 	ctl := controller.New(inv, md, sp, cfg.Verification, cfg.Controller.TempDir, cfg.Controller.JobTimeout)
 	ctl.Logger = logger
+
+	// Metrics subscribe to the same event stream as logging, so recording
+	// them requires zero extra instrumentation calls inside the controller
+	// or plugins - the "Metrics/Events" step of the documented core backup
+	// pipeline (present at every phase, per docs/resources/scalability-model.png).
+	reg := prometheus.NewRegistry()
+	metricsPub := metrics.New(reg)
+	ctl.Events = &events.Multi{
+		Subscribers: []events.Publisher{&events.LogPublisher{Logger: logger}, metricsPub},
+		Logger:      logger,
+	}
+
 	ctl.RegisterPlugin("postgres", postgres.NewFactory())
 	ctl.RegisterPlugin("filesystem", filesystem.NewFactory())
 
 	q := queue.NewMemory(queueCapacity)
 
-	return &app{Config: cfg, Inventory: inv, Metadata: md, Queue: q, Controller: ctl, Logger: logger}, nil
+	return &app{Config: cfg, Inventory: inv, Metadata: md, Queue: q, Controller: ctl, MetricsRegistry: reg, Logger: logger}, nil
 }
 
 // reconcileQueuedJobs re-enqueues every job persisted as queued. The
