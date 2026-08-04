@@ -14,9 +14,11 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"time"
 
 	"bop/internal/core"
+	"bop/internal/events"
 	"bop/internal/inventory"
 	"bop/internal/metadata"
 	"bop/internal/plugin"
@@ -40,8 +42,9 @@ type Controller struct {
 	Storage      storage.StorageProvider
 	Verification core.Verification // global default
 	TempDir      string
-	JobTimeout   time.Duration // 0 means no per-job deadline
-	Logger       *slog.Logger  // optional; defaults to slog.Default()
+	JobTimeout   time.Duration    // 0 means no per-job deadline
+	Logger       *slog.Logger     // optional; defaults to slog.Default()
+	Events       events.Publisher // optional; defaults to &events.LogPublisher{}
 
 	factories map[string]PluginFactory
 }
@@ -71,6 +74,27 @@ func (c *Controller) logger() *slog.Logger {
 	return slog.Default()
 }
 
+func (c *Controller) events() events.Publisher {
+	if c.Events != nil {
+		return c.Events
+	}
+	return &events.LogPublisher{Logger: c.logger()}
+}
+
+// publish emits an event, recovering from a panicking Publisher so a
+// badly-behaved subscriber can never fail a backup job. This makes "event
+// emission is non-fatal" structural, not just a convention callers have to
+// remember.
+func (c *Controller) publish(ctx context.Context, e events.Event) {
+	defer func() {
+		if r := recover(); r != nil {
+			c.logger().Error("event publisher panicked", "panic", r, "event_type", e.Type)
+		}
+	}()
+	e.Timestamp = time.Now().UTC()
+	c.events().Publish(ctx, e)
+}
+
 // RunJob executes the documented backup pipeline for job. A returned error
 // means the job could not even be started (unknown host or plugin) - the
 // job's persisted status is left untouched in that case, since it was
@@ -92,6 +116,7 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 	if err := c.Metadata.UpdateJobStatus(ctx, job.ID, core.JobStatusInProgress); err != nil {
 		return fmt.Errorf("controller: mark job %s in_progress: %w", job.ID, err)
 	}
+	c.publish(ctx, events.Event{Type: events.TypeBackupStarted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin})
 
 	pipelineCtx := ctx
 	if c.JobTimeout > 0 {
@@ -115,6 +140,14 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 	// which exists for crash recovery, not for routine timeouts.
 	recordCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	completionEvent := events.TypeBackupCompleted
+	var eventFields map[string]string
+	if pipelineErr != nil {
+		completionEvent = events.TypeBackupFailed
+		eventFields = map[string]string{"error": pipelineErr.Error()}
+	}
+	c.publish(recordCtx, events.Event{Type: completionEvent, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Fields: eventFields})
 
 	if err := c.Metadata.UpdateJobStatus(recordCtx, job.ID, finalStatus); err != nil {
 		if pipelineErr != nil {
@@ -140,10 +173,15 @@ func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventor
 		return fmt.Errorf("instantiate plugin %q: %w", job.Plugin, err)
 	}
 
+	c.publish(ctx, events.Event{Type: events.TypePluginDiscoveryStarted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin})
 	resources, err := p.Discover(ctx)
 	if err != nil {
 		return fmt.Errorf("discover on %q: %w", job.Host, err)
 	}
+	c.publish(ctx, events.Event{
+		Type: events.TypePluginDiscoveryCompleted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin,
+		Fields: map[string]string{"resource_count": strconv.Itoa(len(resources))},
+	})
 
 	verification := resolveVerification(c.Verification, srv.Verification)
 
@@ -158,6 +196,8 @@ func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventor
 	// resources have been attempted, regardless of individual outcomes.
 	if err := c.Storage.ApplyRetention(ctx, job.Host, job.Policy); err != nil {
 		errs = append(errs, fmt.Errorf("apply retention: %w", err))
+	} else {
+		c.publish(ctx, events.Event{Type: events.TypeRetentionApplied, JobID: job.ID, Host: job.Host, Plugin: job.Plugin})
 	}
 
 	if len(errs) > 0 {
@@ -195,22 +235,34 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 	}
 	artifact.Checksum = checksum
 
+	c.publish(ctx, events.Event{
+		Type: events.TypeArtifactCreated, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID,
+		Fields: map[string]string{"size": strconv.FormatInt(artifact.Size, 10), "checksum": artifact.Checksum},
+	})
+
 	// Encryption is deferred: no key management story exists yet (open
 	// decision, see project notes) - artifact.Encrypted stays false.
 
+	c.publish(ctx, events.Event{Type: events.TypeArtifactUploadStarted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})
 	snapshotID, err := c.Storage.Store(ctx, artifact)
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
 	}
+	c.publish(ctx, events.Event{
+		Type: events.TypeArtifactUploadCompleted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID,
+		Fields: map[string]string{"snapshot_id": string(snapshotID)},
+	})
 
 	// Verify before recording: a snapshot that fails its integrity check
 	// must never appear in ListSnapshots looking like a good one. If this
 	// fails, the artifact may still physically exist in the repository,
 	// untracked by our metadata - acceptable for Phase 1, since the
 	// alternative (recording an unverified snapshot as trustworthy) is worse.
+	c.publish(ctx, events.Event{Type: events.TypeRepositoryVerificationStarted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})
 	if err := c.Storage.Verify(ctx, snapshotID); err != nil {
 		return fmt.Errorf("storage verify: %w", err)
 	}
+	c.publish(ctx, events.Event{Type: events.TypeRepositoryVerificationCompleted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})
 
 	snap := core.Snapshot{
 		ID:        snapshotID,
@@ -243,9 +295,12 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 		// actually be restored?") the feature exists to prove.
 		restoreTarget := artifact
 		restoreTarget.ResourceID = res.ID + "-bop-verify"
+
+		c.publish(ctx, events.Event{Type: events.TypeRestoreVerificationStarted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})
 		if err := p.Restore(ctx, restoreTarget); err != nil {
 			return fmt.Errorf("restore test: %w", err)
 		}
+		c.publish(ctx, events.Event{Type: events.TypeRestoreVerificationCompleted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})
 	}
 
 	return nil

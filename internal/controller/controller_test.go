@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bop/internal/core"
+	"bop/internal/events"
 	"bop/internal/inventory"
 	"bop/internal/metadata"
 	"bop/internal/plugin"
@@ -348,5 +349,89 @@ func TestRunJobRespectsJobTimeout(t *testing.T) {
 	}
 	if got.Status != core.JobStatusFailed {
 		t.Errorf("job status = %q, want failed", got.Status)
+	}
+}
+
+// recordingPublisher is an events.Publisher test double that records every
+// event's type in emission order.
+type recordingPublisher struct {
+	types []events.Type
+}
+
+func (r *recordingPublisher) Publish(_ context.Context, e events.Event) {
+	r.types = append(r.types, e.Type)
+}
+
+func TestRunJobEmitsExpectedEventSequence(t *testing.T) {
+	dir := t.TempDir()
+	p := &stubPlugin{resources: []core.Resource{{ID: "myapp"}}, backupErr: map[string]error{}, tempDir: dir}
+	s := newStubStorage()
+	c, md := setup(t, p, s, testInventory(nil))
+
+	pub := &recordingPublisher{}
+	c.Events = pub
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, Policy: core.Policy{Daily: 7}, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	if err := c.RunJob(ctx, job); err != nil {
+		t.Fatalf("RunJob: %v", err)
+	}
+
+	want := []events.Type{
+		events.TypeBackupStarted,
+		events.TypePluginDiscoveryStarted,
+		events.TypePluginDiscoveryCompleted,
+		events.TypeArtifactCreated,
+		events.TypeArtifactUploadStarted,
+		events.TypeArtifactUploadCompleted,
+		events.TypeRepositoryVerificationStarted,
+		events.TypeRepositoryVerificationCompleted,
+		events.TypeRetentionApplied,
+		events.TypeBackupCompleted,
+	}
+	if len(pub.types) != len(want) {
+		t.Fatalf("emitted %d events %v, want %d %v", len(pub.types), pub.types, len(want), want)
+	}
+	for i, wantType := range want {
+		if pub.types[i] != wantType {
+			t.Errorf("event[%d] = %s, want %s", i, pub.types[i], wantType)
+		}
+	}
+}
+
+// panickingPublisher is an events.Publisher test double that always panics,
+// to prove a broken subscriber can never fail a backup job.
+type panickingPublisher struct{}
+
+func (panickingPublisher) Publish(context.Context, events.Event) {
+	panic("subscriber exploded")
+}
+
+func TestRunJobSurvivesPanickingEventPublisher(t *testing.T) {
+	dir := t.TempDir()
+	p := &stubPlugin{resources: []core.Resource{{ID: "myapp"}}, backupErr: map[string]error{}, tempDir: dir}
+	s := newStubStorage()
+	c, md := setup(t, p, s, testInventory(nil))
+	c.Events = panickingPublisher{}
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, Policy: core.Policy{Daily: 7}, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	if err := c.RunJob(ctx, job); err != nil {
+		t.Fatalf("RunJob: %v (a panicking event publisher must not fail the job)", err)
+	}
+
+	got, err := md.GetJob(ctx, "job-1")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.Status != core.JobStatusCompleted {
+		t.Errorf("job status = %q, want completed", got.Status)
 	}
 }
