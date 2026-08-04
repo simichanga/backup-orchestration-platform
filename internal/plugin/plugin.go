@@ -22,8 +22,15 @@ type BackupPlugin interface {
 	// Backup produces an artifact from a single resource.
 	Backup(ctx context.Context, resource core.Resource) (core.Artifact, error)
 
-	// Restore writes an artifact back to its target. Also used, with a
-	// temporary target, as the optional restore-test pipeline step.
+	// Restore writes an artifact back to its target: artifact.Path is the
+	// source dump/artifact to restore FROM, artifact.ResourceID is the
+	// target identifier to restore INTO (e.g. a database name). Also used
+	// as the optional restore-test pipeline step, in which case
+	// ResourceID is a scratch identifier distinct from the live resource
+	// - restoring into the live resource during a routine verification
+	// step would be a data-loss bug, not a feature. A plugin that cannot
+	// provision a disposable target for its resource type should fail
+	// clearly rather than restore over the live resource.
 	Restore(ctx context.Context, artifact core.Artifact) error
 
 	// Verify is a structural sanity check on an artifact (e.g. is a dump

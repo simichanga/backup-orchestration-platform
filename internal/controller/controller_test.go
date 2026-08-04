@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,7 +29,8 @@ type stubPlugin struct {
 	// immediately, to exercise JobTimeout cancellation.
 	blockUntilCtxDone bool
 
-	restoreCalls int
+	restoreCalls        int
+	lastRestoreResource string
 }
 
 func (p *stubPlugin) Discover(context.Context) ([]core.Resource, error) { return p.resources, nil }
@@ -49,7 +51,13 @@ func (p *stubPlugin) Backup(ctx context.Context, res core.Resource) (core.Artifa
 	return core.Artifact{ResourceID: res.ID, Path: path, Size: int64(len(content)), CreatedAt: time.Now()}, nil
 }
 
-func (p *stubPlugin) Restore(context.Context, core.Artifact) error {
+func (p *stubPlugin) Restore(_ context.Context, a core.Artifact) error {
+	// Mirrors a real plugin (e.g. postgres) reading the dump from a.Path -
+	// a stub that ignores a.Path entirely would hide a broken caller.
+	if _, err := os.Stat(a.Path); err != nil {
+		return fmt.Errorf("stub restore: %w", err)
+	}
+	p.lastRestoreResource = a.ResourceID
 	p.restoreCalls++
 	return p.restoreErr
 }
@@ -295,6 +303,12 @@ func TestRunJobUsesPerHostVerificationOverride(t *testing.T) {
 
 	if p.restoreCalls != 1 {
 		t.Errorf("plugin.Restore called %d times, want 1 (per-host verification override was enabled)", p.restoreCalls)
+	}
+	if p.lastRestoreResource == "myapp" {
+		t.Errorf("restore-test targeted the live resource %q directly - must use a scratch-suffixed identifier, never the live resource", p.lastRestoreResource)
+	}
+	if p.lastRestoreResource != "myapp-bop-verify" {
+		t.Errorf("restore-test target = %q, want myapp-bop-verify", p.lastRestoreResource)
 	}
 }
 

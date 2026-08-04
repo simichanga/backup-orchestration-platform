@@ -14,7 +14,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"time"
 
 	"bop/internal/core"
@@ -227,8 +226,24 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 	}
 
 	if verification.Enabled {
-		target := core.Artifact{ResourceID: res.ID, Path: filepath.Join(verification.TargetDir, res.ID)}
-		if err := p.Restore(ctx, target); err != nil {
+		// Restore-test target is deliberately scratch-suffixed, never
+		// res.ID itself: restoring into the live resource during routine
+		// verification would be a data-loss bug. Uses the artifact we
+		// already produced (still on disk - cleanup runs via defer after
+		// this function returns), not verification.TargetDir: that
+		// setting is a filesystem location, meaningful for a future
+		// filesystem-style plugin's restore destination, but this
+		// controller has no business inventing a path for a database-style
+		// plugin whose "restore target" is an identifier, not a directory.
+		//
+		// No plugin currently provisions a scratch database, so this will
+		// fail until one does (see project notes) - failing clearly here
+		// is correct: silently treating an unrun restore-test as a pass
+		// would be false confidence in exactly the property ("can this
+		// actually be restored?") the feature exists to prove.
+		restoreTarget := artifact
+		restoreTarget.ResourceID = res.ID + "-bop-verify"
+		if err := p.Restore(ctx, restoreTarget); err != nil {
 			return fmt.Errorf("restore test: %w", err)
 		}
 	}
