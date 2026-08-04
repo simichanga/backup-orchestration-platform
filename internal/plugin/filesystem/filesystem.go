@@ -9,7 +9,10 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"path"
+	"strings"
 	"time"
 
 	"bop/internal/core"
@@ -98,15 +101,34 @@ func (p *Plugin) Backup(ctx context.Context, res core.Resource) (core.Artifact, 
 	}, nil
 }
 
-// Restore extracts a.Path's tar.gz archive into a.ResourceID, a directory
-// it creates if missing. Also the restore-test pipeline step (see
-// plugin.BackupPlugin.Restore's doc comment): during verification,
-// a.ResourceID is a scratch-suffixed path, never the live resource, so
-// this genuinely proves recoverability into a real, disposable directory.
+// restoreTestBase is where restore-test scratch directories are created,
+// rather than as a sibling of the source path. Confirmed against a real
+// SSH target: a backup user with read access to, say, /data (enough to
+// tar it) commonly has no write access to create a sibling directory
+// there - mkdir under the source's parent failed with permission denied
+// in exactly that setup. /tmp is writable by any user on essentially
+// every Linux target, so restore-tests land there instead.
+const restoreTestBase = "/tmp/bop-restore-test"
+
+// Restore extracts a.Path's tar.gz archive into a target directory it
+// creates if missing. Also the restore-test pipeline step (see
+// plugin.BackupPlugin.Restore's doc comment): when a.ResourceID carries
+// plugin.RestoreTestSuffix, this call came from the controller's
+// verification step, not a real restore, and two things change - the
+// actual target is redirected under restoreTestBase (see its doc comment)
+// rather than using a.ResourceID literally, and the target is removed
+// again afterward (best-effort: a failed teardown must not fail an
+// otherwise-successful restore-test, mirroring how
+// controller.cleanupArtifact treats its own cleanup as non-fatal - and
+// must never run for a real restore, which must never have its own target
+// deleted right after writing it).
+//
 // Unlike the postgres plugin, filesystem needs no separate
-// scratch-provisioning story - "create a new directory" is always safe,
-// which is why verification.enabled is actually functional for this
-// plugin even though it currently is not for postgres.
+// scratch-provisioning story - creating a disposable directory under /tmp
+// is always safe, which is why verification.enabled is actually
+// functional for this plugin even though it currently is not for
+// postgres. Verified against a real SSH target, including the permission
+// constraint above.
 func (p *Plugin) Restore(ctx context.Context, a core.Artifact) error {
 	f, err := os.Open(a.Path)
 	if err != nil {
@@ -114,9 +136,22 @@ func (p *Plugin) Restore(ctx context.Context, a core.Artifact) error {
 	}
 	defer f.Close()
 
-	if err := p.exec.Run(ctx, untarCommand(a.ResourceID), f, io.Discard); err != nil {
-		return fmt.Errorf("filesystem: restore %s: %w", a.ResourceID, err)
+	target := a.ResourceID
+	isRestoreTest := strings.HasSuffix(a.ResourceID, plugin.RestoreTestSuffix)
+	if isRestoreTest {
+		target = path.Join(restoreTestBase, a.ResourceID)
 	}
+
+	if err := p.exec.Run(ctx, untarCommand(target), f, io.Discard); err != nil {
+		return fmt.Errorf("filesystem: restore %s: %w", target, err)
+	}
+
+	if isRestoreTest {
+		if err := p.exec.Run(ctx, removeCommand(target), nil, io.Discard); err != nil {
+			slog.Default().Warn("filesystem: restore-test scratch directory cleanup failed", "path", target, "error", err)
+		}
+	}
+
 	return nil
 }
 

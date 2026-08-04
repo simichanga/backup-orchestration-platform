@@ -15,6 +15,7 @@ import (
 // fakeExecutor is an sshexec.Executor test double: no real SSH connection.
 type fakeExecutor struct {
 	lastCommand string
+	commands    []string // every command Run was called with, in order
 	lastStdin   []byte
 	writeStdout string
 	err         error
@@ -22,6 +23,7 @@ type fakeExecutor struct {
 
 func (f *fakeExecutor) Run(_ context.Context, command string, stdin io.Reader, stdout io.Writer) error {
 	f.lastCommand = command
+	f.commands = append(f.commands, command)
 	if stdin != nil {
 		b, err := io.ReadAll(stdin)
 		if err != nil {
@@ -141,7 +143,41 @@ func TestVerifyEmptyFile(t *testing.T) {
 	}
 }
 
-func TestRestoreSendsArtifactContentAsStdinToTarget(t *testing.T) {
+func TestRestoreRealTargetUsesResourceIDLiterallyWithNoCleanup(t *testing.T) {
+	exec := &fakeExecutor{}
+	dir := t.TempDir()
+	path := dir + "/archive.tar.gz"
+	if err := os.WriteFile(path, sampleGzipArchive, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	p := &Plugin{exec: exec}
+	if err := p.Restore(context.Background(), core.Artifact{ResourceID: "/var/www", Path: path}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	if !bytes.Equal(exec.lastStdin, sampleGzipArchive) {
+		t.Errorf("stdin sent = %v, want the artifact's content", exec.lastStdin)
+	}
+	if len(exec.commands) != 1 {
+		t.Fatalf("Run called %d times, want 1 (a real restore must never clean up its own target)", len(exec.commands))
+	}
+	if !strings.Contains(exec.commands[0], "'/var/www'") {
+		t.Errorf("command = %q, expected the literal target path %q", exec.commands[0], "/var/www")
+	}
+	if !strings.Contains(exec.commands[0], "'tar'") || !strings.Contains(exec.commands[0], "'xzf'") {
+		t.Errorf("command = %q, expected a tar extraction invocation", exec.commands[0])
+	}
+}
+
+// TestRestoreTestRedirectsToTmpAndCleansUp locks in a fix found against a
+// real SSH target: restoring as a sibling of the source (e.g.
+// /var/www-bop-verify next to /var/www) requires write access in the
+// source's own parent directory, which a read-only backup user commonly
+// doesn't have. Redirecting under /tmp - and cleaning up afterward, so
+// repeated verification runs don't accumulate copies of restored data on
+// the target - avoids that.
+func TestRestoreTestRedirectsToTmpAndCleansUp(t *testing.T) {
 	exec := &fakeExecutor{}
 	dir := t.TempDir()
 	path := dir + "/archive.tar.gz"
@@ -157,11 +193,58 @@ func TestRestoreSendsArtifactContentAsStdinToTarget(t *testing.T) {
 	if !bytes.Equal(exec.lastStdin, sampleGzipArchive) {
 		t.Errorf("stdin sent = %v, want the artifact's content", exec.lastStdin)
 	}
-	if !strings.Contains(exec.lastCommand, "'/var/www-bop-verify'") {
-		t.Errorf("command = %q, expected the target path %q", exec.lastCommand, "/var/www-bop-verify")
+	if len(exec.commands) != 2 {
+		t.Fatalf("Run called %d times, want 2 (extract, then cleanup)", len(exec.commands))
 	}
-	if !strings.Contains(exec.lastCommand, "'tar'") || !strings.Contains(exec.lastCommand, "'xzf'") {
-		t.Errorf("command = %q, expected a tar extraction invocation", exec.lastCommand)
+
+	const wantTarget = "/tmp/bop-restore-test/var/www-bop-verify"
+
+	extractCmd := exec.commands[0]
+	if !strings.Contains(extractCmd, "'"+wantTarget+"'") {
+		t.Errorf("extract command = %q, want target %q (redirected under /tmp, not a sibling of the source)", extractCmd, wantTarget)
+	}
+	if strings.Contains(extractCmd, "'/var/www-bop-verify'") {
+		t.Errorf("extract command = %q, must not target the literal ResourceID path directly - that would require write access next to the source", extractCmd)
+	}
+
+	cleanupCmd := exec.commands[1]
+	if !strings.Contains(cleanupCmd, "'rm'") || !strings.Contains(cleanupCmd, "'-rf'") {
+		t.Errorf("cleanup command = %q, want an rm -rf invocation", cleanupCmd)
+	}
+	if !strings.Contains(cleanupCmd, "'"+wantTarget+"'") {
+		t.Errorf("cleanup command = %q, want it to remove the same scratch target %q", cleanupCmd, wantTarget)
+	}
+}
+
+// sequencedExecutor returns errs[call index] from each successive Run call,
+// letting a test make the Nth remote command fail independently of the others.
+type sequencedExecutor struct {
+	errs  []error
+	calls int
+}
+
+func (s *sequencedExecutor) Run(_ context.Context, _ string, stdin io.Reader, _ io.Writer) error {
+	if stdin != nil {
+		io.ReadAll(stdin)
+	}
+	err := s.errs[s.calls]
+	s.calls++
+	return err
+}
+
+func TestRestoreTestCleanupFailureDoesNotFailRestore(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/archive.tar.gz"
+	if err := os.WriteFile(path, sampleGzipArchive, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Extract succeeds; the follow-up cleanup rm fails.
+	exec := &sequencedExecutor{errs: []error{nil, errors.New("permission denied")}}
+	p := &Plugin{exec: exec}
+
+	if err := p.Restore(context.Background(), core.Artifact{ResourceID: "/var/www-bop-verify", Path: path}); err != nil {
+		t.Fatalf("Restore: %v (a failed cleanup must not fail an otherwise-successful restore-test)", err)
 	}
 }
 

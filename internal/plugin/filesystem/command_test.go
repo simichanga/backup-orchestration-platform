@@ -36,6 +36,14 @@ func TestTarCommandIncludesExcludes(t *testing.T) {
 	}
 }
 
+func TestRemoveCommandDeletesRecursively(t *testing.T) {
+	got := removeCommand("/tmp/bop-restore-test/var/www-bop-verify")
+
+	if !strings.Contains(got, "'rm' '-rf' '/tmp/bop-restore-test/var/www-bop-verify'") {
+		t.Errorf("removeCommand() = %q, want an rm -rf of the target", got)
+	}
+}
+
 func TestUntarCommandCreatesTargetAndStripsTopLevel(t *testing.T) {
 	got := untarCommand("/scratch/restore-target")
 

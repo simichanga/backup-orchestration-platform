@@ -42,3 +42,11 @@ func untarCommand(targetPath string) string {
 	extract := shellcmd.Build([]string{"tar", "xzf", "-", "-C", targetPath, "--strip-components=1"})
 	return mkdir + " && " + extract
 }
+
+// removeCommand builds the remote command to recursively delete targetPath.
+// Used only to tear down a restore-test's scratch directory after Restore
+// (see filesystem.go) - never called for a real restore, which must never
+// have its own target deleted right after writing it.
+func removeCommand(targetPath string) string {
+	return shellcmd.Build([]string{"rm", "-rf", targetPath})
+}

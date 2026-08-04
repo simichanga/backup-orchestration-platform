@@ -294,7 +294,7 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 		// would be false confidence in exactly the property ("can this
 		// actually be restored?") the feature exists to prove.
 		restoreTarget := artifact
-		restoreTarget.ResourceID = res.ID + "-bop-verify"
+		restoreTarget.ResourceID = res.ID + plugin.RestoreTestSuffix
 
 		c.publish(ctx, events.Event{Type: events.TypeRestoreVerificationStarted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})
 		if err := p.Restore(ctx, restoreTarget); err != nil {

@@ -8,6 +8,16 @@ import (
 	"bop/internal/core"
 )
 
+// RestoreTestSuffix is appended to a resource's ID by the controller's
+// restore-test pipeline step to build a scratch identifier distinct from
+// the live resource (see Restore's doc comment below). It is exported so a
+// plugin that wants to recognize "this Restore call is a verification
+// test, not a real restore" - e.g. to redirect the target somewhere it can
+// actually write, or to clean up after itself - can check for it without
+// the controller and every plugin implementation silently agreeing on an
+// unexported magic string.
+const RestoreTestSuffix = "-bop-verify"
+
 // BackupPlugin is the contract every backup source (PostgreSQL, Docker,
 // filesystem, ...) implements. The controller never contains source-specific
 // logic; it only calls these methods.
