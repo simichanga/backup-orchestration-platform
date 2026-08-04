@@ -142,19 +142,17 @@ servers:
       enabled: true
 ```
 
-> **Current limitation:** this restore-test step will fail for the
-> **postgres** plugin as shipped - not because the restore mechanism is
-> broken (the actual SSH+psql invocation has been verified against a real
-> Postgres server, restoring a real dump into a real database with the data
-> intact), but because nothing provisions the scratch `<database>-bop-verify`
-> database first, and `psql` has nothing to connect to. Pre-create that
-> database by hand on the target and the restore-test succeeds; there is no
-> automatic provisioning yet. The **filesystem** plugin has no such gap - it
-> restores into a disposable directory it creates itself. Leave
-> `verification.enabled` off for postgres-only inventories until
-> auto-provisioning is built; see
-> [Writing a Plugin](../04-writing-plugins.md#restore-test-support) for
-> what a plugin needs to support it.
+Both built-in plugins support this fully. The **postgres** plugin
+provisions its own scratch `<database>-bop-verify` database for the
+duration of the test and drops it afterward - `CREATE DATABASE` failing
+because that name is already taken (a real resource collides with it, or a
+previous restore-test crashed before cleaning up) is treated as "not
+created by this run" and refused rather than silently reused, so a
+restore-test never restores into or drops a database it doesn't own. The
+**filesystem** plugin restores into a disposable directory it creates
+itself, the same idea. See
+[Writing a Plugin](../04-writing-plugins.md#restore-test-support) for the
+full contract a plugin needs to support this.
 
 You can always manually restore a snapshot's raw artifact, independent of
 the (optional) automatic verification step above:

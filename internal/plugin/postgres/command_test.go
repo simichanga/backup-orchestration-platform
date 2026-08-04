@@ -42,6 +42,54 @@ func TestRestoreCommandContainerUsesInteractiveFlag(t *testing.T) {
 	}
 }
 
+func TestCreateDatabaseCommandDirect(t *testing.T) {
+	cfg := postgresConfig{Username: "backup_user", Password: "secret"}
+	got := createDatabaseCommand(cfg, "myapp-bop-verify")
+
+	for _, want := range []string{"'psql'", "'-U'", "'backup_user'", "'-d'", "'postgres'", `CREATE DATABASE "myapp-bop-verify"`, "ON_ERROR_STOP=1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("createDatabaseCommand() = %q, missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "docker") {
+		t.Errorf("createDatabaseCommand() = %q, should not invoke docker without a container configured", got)
+	}
+}
+
+func TestCreateDatabaseCommandContainer(t *testing.T) {
+	cfg := postgresConfig{Username: "backup_user", Password: "secret", Container: "my-postgres"}
+	got := createDatabaseCommand(cfg, "myapp-bop-verify")
+
+	for _, want := range []string{"'docker'", "'exec'", "'my-postgres'", `CREATE DATABASE "myapp-bop-verify"`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("createDatabaseCommand() = %q, missing %q", got, want)
+		}
+	}
+	if strings.Contains(got, "'-i'") {
+		t.Errorf("createDatabaseCommand() = %q, should not use docker exec -i (no stdin needed)", got)
+	}
+}
+
+func TestDropDatabaseCommand(t *testing.T) {
+	cfg := postgresConfig{Username: "backup_user", Password: "secret"}
+	got := dropDatabaseCommand(cfg, "myapp-bop-verify")
+
+	if !strings.Contains(got, `DROP DATABASE "myapp-bop-verify"`) {
+		t.Errorf("dropDatabaseCommand() = %q, want a DROP DATABASE for myapp-bop-verify", got)
+	}
+	if !strings.Contains(got, "'-d'") || !strings.Contains(got, "'postgres'") {
+		t.Errorf("dropDatabaseCommand() = %q, want it to connect to the postgres maintenance database", got)
+	}
+}
+
+func TestCreateDatabaseSQLEscapesEmbeddedQuotes(t *testing.T) {
+	got := createDatabaseSQL(`weird"name`)
+	want := `CREATE DATABASE "weird""name"`
+	if got != want {
+		t.Errorf("createDatabaseSQL() = %q, want %q", got, want)
+	}
+}
+
 func TestDumpCommandQuotesPasswordWithSpecialCharacters(t *testing.T) {
 	cfg := postgresConfig{Username: "backup_user", Password: `p'ss word`}
 	got := dumpCommand(cfg, "myapp")

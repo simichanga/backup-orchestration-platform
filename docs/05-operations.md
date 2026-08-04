@@ -113,12 +113,16 @@ with no extra configuration.
   controllers against one shared repository (a dead PID on a *different*
   machine can't be verified this way) - re-check this behavior before
   relying on it in that topology.
-- **Postgres's restore-test step fails today if `verification.enabled` is
-  on for a postgres resource** - see
+- **Both built-in plugins support `verification.enabled` fully.** Postgres
+  provisions its own scratch `<database>-bop-verify` database for the
+  duration of the test and drops it afterward; if that name is already
+  taken (a real resource collides with it, or a previous restore-test
+  crashed before cleaning up), the restore-test fails clearly instead of
+  touching a database it didn't create - see
   [Writing a Plugin](04-writing-plugins.md#restore-test-support) for the
-  precise reason (no scratch-database auto-provisioning yet) and
-  [Quickstart](03-getting-started/quickstart.md#8-test-a-restore) for the
-  workaround. Filesystem's restore-test works today.
+  full contract. If you see this failure repeatedly for the same resource,
+  something is left over on the target from a crashed run; drop the
+  `<database>-bop-verify` database by hand to clear it.
 - **No multi-controller / HA story.** One controller process, one SQLite
   metadata database, one in-memory job queue. Losing the controller host
   loses in-flight (not yet-persisted) scheduling state until it comes back;

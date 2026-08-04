@@ -152,7 +152,10 @@ func (p *Plugin) Restore(ctx context.Context, a core.Artifact) error {
 }
 ```
 
-Two lessons for a new plugin:
+Three lessons for a new plugin, the third from postgres rather than
+filesystem - its resource type (a database) can't be restored into a
+throwaway path the way a directory can, so it needs to actually provision
+scratch state, not just pick a safe location for it:
 
 1. **Pick a restore-test destination your own SSH user can actually write
    to**, independent of whatever permissions it has on the source. `/tmp`
@@ -163,12 +166,22 @@ Two lessons for a new plugin:
    `controller.cleanupArtifact`'s treatment of its own temp-file cleanup as
    non-fatal). Otherwise `verification.enabled: true` left on nightly
    accumulates scratch data on every target host forever.
+3. **If your restore-test needs to provision state first (postgres: a
+   scratch database via `CREATE DATABASE`), never assume you own what you
+   didn't just create.** `postgres.Restore` (`internal/plugin/postgres/postgres.go`)
+   treats `CREATE DATABASE` failing with "already exists" as proof this run
+   didn't create it - a real resource happens to collide with the
+   `-bop-verify` name, or a previous restore-test crashed before its own
+   cleanup ran - and refuses to restore into or drop it, rather than
+   reusing or deleting state it can't prove is disposable. Verified for
+   real: a genuinely pre-existing database survives untouched when this
+   path triggers, and the ownership check is driven by Postgres's actual
+   error text, not an assumed one.
 
-If your resource type can't safely support a restore-test at all (e.g.
-`postgres`, which would need to provision a whole scratch database - not
-yet built), **fail clearly rather than fake success**. Silently treating
-an unrun restore-test as a pass is false confidence in exactly the
-property ("can this actually be restored?") the feature exists to prove.
+If your resource type can't safely support a restore-test at all,
+**fail clearly rather than fake success**. Silently treating an unrun
+restore-test as a pass is false confidence in exactly the property ("can
+this actually be restored?") the feature exists to prove.
 
 ### `Health`
 

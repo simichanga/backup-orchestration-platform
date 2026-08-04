@@ -81,7 +81,7 @@ most Postgres deployments run containerized, hence the option.
 | Key            | Type          | Required | Description |
 |----------------|---------------|----------|--------------|
 | `username`     | string        | yes      | Postgres role to connect as. |
-| `password_env` | string        | yes      | Name of an environment variable (in the `bop` process's environment, e.g. via `secrets.env_file`) holding the password. Never put the password in inventory.yaml directly. |
+| `password_env` | string        | yes      | Name of an environment variable, already present in the `bop` process's own environment (e.g. via systemd `EnvironmentFile=` - see [Running BOP in Production](../05-operations.md)), holding the password. Never put the password in inventory.yaml directly. |
 | `databases`    | list of string| yes, at least one | Database names to back up. Each becomes one resource (one job step, one snapshot). |
 | `container`    | string        | no       | Docker container name. When set, `pg_dump`/`psql` run via `docker exec [-i] <container> ...` instead of directly on the host. |
 
@@ -89,9 +89,12 @@ Each configured database is dumped with `pg_dump`'s default plain-text SQL
 format (not the custom/directory format), so restore only ever needs
 `psql`, never `pg_restore`.
 
-**Known limitation:** the restore-test pipeline step
-(`verification.enabled`) is not yet functional for this plugin - see
-[Writing a Plugin](../04-writing-plugins.md#restore-test-support).
+The restore-test pipeline step (`verification.enabled`) is fully
+functional for this plugin: it provisions a scratch
+`<database>-bop-verify` database, restores into it, and drops it
+afterward - see
+[Writing a Plugin](../04-writing-plugins.md#restore-test-support) for the
+ownership-safety contract this relies on.
 
 ### `filesystem`
 
@@ -108,9 +111,9 @@ contents (`-C <parent> <basename>`) and, on restore, extracts with
 `--strip-components=1` into the target - a bare file path will not restore
 correctly.
 
-Unlike `postgres`, the restore-test pipeline step is functional for this
-plugin: it restores into a disposable directory under `/tmp` (regardless of
-what `verification.target_dir` is set to - see
+The restore-test pipeline step is functional for this plugin too: it
+restores into a disposable directory under `/tmp` (regardless of what
+`verification.target_dir` is set to - see
 [Configuration Reference](configuration.md)) and cleans up afterward.
 
 ### `docker`

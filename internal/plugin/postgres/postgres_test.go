@@ -14,13 +14,20 @@ import (
 // fakeExecutor is a remoteExecutor test double: no real SSH connection.
 type fakeExecutor struct {
 	lastCommand string
+	calls       []string
 	lastStdin   []byte
 	writeStdout string
 	err         error
+	// errFor, if set, overrides err on a per-call basis: called with each
+	// command before it runs, letting a test simulate one call in a
+	// sequence failing while the others succeed (e.g. restore-test's
+	// create/restore/drop sequence).
+	errFor func(command string) error
 }
 
 func (f *fakeExecutor) Run(_ context.Context, command string, stdin io.Reader, stdout io.Writer) error {
 	f.lastCommand = command
+	f.calls = append(f.calls, command)
 	if stdin != nil {
 		b, err := io.ReadAll(stdin)
 		if err != nil {
@@ -28,7 +35,11 @@ func (f *fakeExecutor) Run(_ context.Context, command string, stdin io.Reader, s
 		}
 		f.lastStdin = b
 	}
-	if f.err != nil {
+	if f.errFor != nil {
+		if err := f.errFor(command); err != nil {
+			return err
+		}
+	} else if f.err != nil {
 		return f.err
 	}
 	if stdout != nil && f.writeStdout != "" {
@@ -156,6 +167,115 @@ func TestRestoreSendsArtifactContentAsStdin(t *testing.T) {
 	}
 	if !strings.Contains(exec.lastCommand, "psql") {
 		t.Errorf("command = %q, expected a psql invocation", exec.lastCommand)
+	}
+	if len(exec.calls) != 1 {
+		t.Errorf("calls = %v, want exactly 1 (an ordinary restore must not provision or drop any database)", exec.calls)
+	}
+}
+
+func classifyCall(command string) string {
+	switch {
+	case strings.Contains(command, "CREATE DATABASE"):
+		return "create"
+	case strings.Contains(command, "DROP DATABASE"):
+		return "drop"
+	case strings.Contains(command, "psql"):
+		return "restore"
+	default:
+		return "other"
+	}
+}
+
+func TestRestoreTestProvisionsAndDropsScratchDatabase(t *testing.T) {
+	exec := &fakeExecutor{}
+	dir := t.TempDir()
+	path := dir + "/dump.sql"
+	if err := os.WriteFile(path, []byte(samplePgDump), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "u", Password: "p"}}
+	if err := p.Restore(context.Background(), core.Artifact{ResourceID: "myapp-bop-verify", Path: path}); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	var got []string
+	for _, c := range exec.calls {
+		got = append(got, classifyCall(c))
+	}
+	want := []string{"create", "restore", "drop"}
+	if len(got) != len(want) {
+		t.Fatalf("calls = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("calls = %v, want %v", got, want)
+			break
+		}
+	}
+	if !strings.Contains(exec.calls[0], `"myapp-bop-verify"`) {
+		t.Errorf("create call = %q, want it to name myapp-bop-verify", exec.calls[0])
+	}
+}
+
+func TestRestoreTestRefusesPreexistingDatabase(t *testing.T) {
+	exec := &fakeExecutor{errFor: func(command string) error {
+		if strings.Contains(command, "CREATE DATABASE") {
+			return errors.New(`ERROR:  database "myapp-bop-verify" already exists`)
+		}
+		return nil
+	}}
+	dir := t.TempDir()
+	path := dir + "/dump.sql"
+	if err := os.WriteFile(path, []byte(samplePgDump), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "u", Password: "p"}}
+	err := p.Restore(context.Background(), core.Artifact{ResourceID: "myapp-bop-verify", Path: path})
+	if err == nil {
+		t.Fatalf("Restore: expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("Restore error = %q, want it to explain the database already existed", err)
+	}
+	if len(exec.calls) != 1 {
+		t.Errorf("calls = %v, want exactly 1 (must not restore into or drop a database it didn't create)", exec.calls)
+	}
+}
+
+func TestRestoreTestDropsScratchDatabaseEvenWhenRestoreFails(t *testing.T) {
+	exec := &fakeExecutor{errFor: func(command string) error {
+		if classifyCall(command) == "restore" {
+			return errors.New("psql: connection reset")
+		}
+		return nil
+	}}
+	dir := t.TempDir()
+	path := dir + "/dump.sql"
+	if err := os.WriteFile(path, []byte(samplePgDump), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "u", Password: "p"}}
+	err := p.Restore(context.Background(), core.Artifact{ResourceID: "myapp-bop-verify", Path: path})
+	if err == nil {
+		t.Fatalf("Restore: expected an error, got nil")
+	}
+
+	var got []string
+	for _, c := range exec.calls {
+		got = append(got, classifyCall(c))
+	}
+	want := []string{"create", "restore", "drop"}
+	if len(got) != len(want) {
+		t.Fatalf("calls = %v, want %v (cleanup must still run after a failed restore)", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("calls = %v, want %v", got, want)
+			break
+		}
 	}
 }
 

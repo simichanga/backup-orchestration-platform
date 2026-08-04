@@ -10,7 +10,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"bop/internal/core"
@@ -97,6 +99,15 @@ func (p *Plugin) Backup(ctx context.Context, res core.Resource) (core.Artifact, 
 	}, nil
 }
 
+// Restore restores a.Path's dump into a.ResourceID. When a.ResourceID
+// carries plugin.RestoreTestSuffix (the controller's restore-test step),
+// the target database doesn't exist yet - postgres has no "create if
+// missing" restore mode - so Restore provisions a scratch database first
+// and drops it afterward, best-effort. It refuses to touch a database that
+// already existed before this call: CREATE DATABASE failing with "already
+// exists" means either a real (non-scratch) resource collides with this
+// name, or a previous restore-test crashed before cleaning up - either way,
+// this run didn't create it and must not restore into or drop it.
 func (p *Plugin) Restore(ctx context.Context, a core.Artifact) error {
 	f, err := os.Open(a.Path)
 	if err != nil {
@@ -104,10 +115,51 @@ func (p *Plugin) Restore(ctx context.Context, a core.Artifact) error {
 	}
 	defer f.Close()
 
+	isRestoreTest := strings.HasSuffix(a.ResourceID, plugin.RestoreTestSuffix)
+	if isRestoreTest {
+		if err := p.exec.Run(ctx, createDatabaseCommand(p.cfg, a.ResourceID), nil, io.Discard); err != nil {
+			if isAlreadyExistsError(err) {
+				return fmt.Errorf("postgres: restore-test scratch database %q already exists - not created by this run, refusing to restore into or drop it; a previous restore-test may have crashed before cleanup, drop it manually to retry: %w", a.ResourceID, err)
+			}
+			return fmt.Errorf("postgres: create restore-test scratch database %q: %w", a.ResourceID, err)
+		}
+	}
+
 	if err := p.exec.Run(ctx, restoreCommand(p.cfg, a.ResourceID), f, io.Discard); err != nil {
+		if isRestoreTest {
+			p.dropScratchDatabase(ctx, a.ResourceID)
+		}
 		return fmt.Errorf("postgres: restore %s: %w", a.ResourceID, err)
 	}
+
+	if isRestoreTest {
+		p.dropScratchDatabase(ctx, a.ResourceID)
+	}
 	return nil
+}
+
+// dropScratchDatabase tears down a restore-test's scratch database,
+// best-effort: a failed teardown must not fail an otherwise-successful
+// restore-test, mirroring the filesystem plugin's identical treatment of
+// its own restore-test scratch directory cleanup. Left-behind databases are
+// still safe - the next restore-test for the same resource will refuse to
+// reuse or drop it (see Restore's isAlreadyExistsError handling) rather
+// than silently operating on state this run didn't create.
+func (p *Plugin) dropScratchDatabase(ctx context.Context, database string) {
+	if err := p.exec.Run(ctx, dropDatabaseCommand(p.cfg, database), nil, io.Discard); err != nil {
+		slog.Default().Warn("postgres: restore-test scratch database cleanup failed", "database", database, "error", err)
+	}
+}
+
+// isAlreadyExistsError reports whether err is CREATE DATABASE's specific
+// "already exists" failure, distinct from other failures (e.g. missing
+// CREATEDB privilege) that should be reported as-is rather than
+// reinterpreted as an ownership conflict. Matched by substring since the
+// executor abstraction carries the remote command's stderr as plain text,
+// not a structured Postgres error code - consistent with Verify's
+// pg_dump-header substring check elsewhere in this file.
+func isAlreadyExistsError(err error) bool {
+	return strings.Contains(err.Error(), "already exists")
 }
 
 // Verify is a cheap structural check, not a parse of the whole SQL dump:
