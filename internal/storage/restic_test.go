@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,6 +35,25 @@ func (f *fakeRunner) Run(_ context.Context, args ...string) ([]byte, error) {
 	}
 	f.i++
 	return out, err
+}
+
+func (f *fakeRunner) RunToWriter(_ context.Context, w io.Writer, args ...string) error {
+	f.calls = append(f.calls, args)
+	var out []byte
+	var err error
+	if f.i < len(f.outputs) {
+		out = f.outputs[f.i]
+	}
+	if f.i < len(f.errs) {
+		err = f.errs[f.i]
+	}
+	f.i++
+	if out != nil {
+		if _, werr := w.Write(out); werr != nil {
+			return werr
+		}
+	}
+	return err
 }
 
 func (f *fakeRunner) lastArgs() []string {
@@ -164,16 +184,68 @@ func TestDeleteCallsForgetWithID(t *testing.T) {
 	}
 }
 
-func TestRetrieveCallsRestoreWithTarget(t *testing.T) {
-	f := &fakeRunner{outputs: [][]byte{nil}}
+func TestRetrieveDumpsRecordedSourcePathToTarget(t *testing.T) {
+	dir := t.TempDir()
+	targetPath := filepath.Join(dir, "restored-artifact")
+
+	f := &fakeRunner{
+		outputs: [][]byte{
+			[]byte(`[{"id":"snap-1","hostname":"prod-db","paths":["/tmp/bop/pg-testdb-12345"]}]`),
+			[]byte("dumped-content"),
+		},
+	}
 	p := &ResticProvider{run: f}
 
-	if err := p.Retrieve(context.Background(), "snap-1", core.Artifact{Path: "/tmp/restored"}); err != nil {
+	if err := p.Retrieve(context.Background(), "snap-1", core.Artifact{Path: targetPath}); err != nil {
 		t.Fatalf("Retrieve: %v", err)
 	}
-	joined := strings.Join(f.lastArgs(), " ")
-	if !strings.Contains(joined, "restore snap-1") || !strings.Contains(joined, "--target /tmp/restored") {
-		t.Errorf("Retrieve args = %q, unexpected", joined)
+
+	content, err := os.ReadFile(targetPath)
+	if err != nil {
+		t.Fatalf("read restored file: %v", err)
+	}
+	if string(content) != "dumped-content" {
+		t.Errorf("restored content = %q, want %q", content, "dumped-content")
+	}
+
+	if len(f.calls) != 2 {
+		t.Fatalf("restic invoked %d times, want 2 (snapshot lookup, then dump)", len(f.calls))
+	}
+	if joined := strings.Join(f.calls[0], " "); !strings.Contains(joined, "snapshots snap-1") {
+		t.Errorf("first call args = %q, want a snapshot lookup for snap-1", joined)
+	}
+	dumpArgs := strings.Join(f.calls[1], " ")
+	if !strings.Contains(dumpArgs, "dump snap-1") || !strings.Contains(dumpArgs, "/tmp/bop/pg-testdb-12345") {
+		t.Errorf("second call args = %q, want a dump of the snapshot's recorded source path", dumpArgs)
+	}
+}
+
+func TestResticDumpPathConvertsWindowsDriveLetters(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{`C:\Users\SImi\file.txt`, "/C/Users/SImi/file.txt"},
+		{`D:\backups\db.dump`, "/D/backups/db.dump"},
+		{"/tmp/bop/pg-testdb-123", "/tmp/bop/pg-testdb-123"}, // already unix-style: no-op
+		{"", ""},
+		{"C", "C"}, // too short to be a drive-letter path
+	}
+	for _, tt := range tests {
+		if got := resticDumpPath(tt.in); got != tt.want {
+			t.Errorf("resticDumpPath(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestRetrieveFailsWhenSnapshotHasNoRecordedPath(t *testing.T) {
+	f := &fakeRunner{outputs: [][]byte{[]byte(`[{"id":"snap-1","paths":[]}]`)}}
+	p := &ResticProvider{run: f}
+
+	dir := t.TempDir()
+	err := p.Retrieve(context.Background(), "snap-1", core.Artifact{Path: filepath.Join(dir, "out")})
+	if err == nil {
+		t.Fatal("Retrieve: expected an error for a snapshot with no recorded path, got nil")
 	}
 }
 
@@ -268,5 +340,36 @@ func TestResticProviderIntegration(t *testing.T) {
 	// apply), the tagging/grouping design would be wrong.
 	if len(snaps) != 2 {
 		t.Fatalf("Snapshots after retention = %d, want 2 (myapp pruned to 1, otherdb kept independently)", len(snaps))
+	}
+
+	// Retrieve against a real repository: this is what caught Retrieve's
+	// original bug (restic restore --target reconstructs the entire
+	// original absolute path under target, rather than writing directly
+	// to it) - the fake-runner test alone only proved the (wrong) command
+	// string was well-formed, not that the restored content ends up
+	// anywhere sensible.
+	restoredPath := filepath.Join(dir, "restored-otherdb.dump")
+	var otherdbID core.SnapshotID
+	for _, s := range snaps {
+		if s.Plugin == "postgres" {
+			otherdbID = s.ID
+		}
+	}
+	if otherdbID == "" {
+		t.Fatalf("could not find a remaining snapshot to retrieve")
+	}
+	if err := p.Retrieve(ctx, otherdbID, core.Artifact{Path: restoredPath}); err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	got, err := os.ReadFile(restoredPath)
+	if err != nil {
+		t.Fatalf("read retrieved file: %v", err)
+	}
+	// Both myapp (pruned to its latest) and otherdb are "v1"/"v2" content
+	// depending on which survived retention; just confirm the retrieved
+	// bytes are non-empty and land exactly at restoredPath, not nested
+	// under it.
+	if len(got) == 0 {
+		t.Errorf("retrieved file is empty")
 	}
 }

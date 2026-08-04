@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -20,6 +21,12 @@ import (
 // binary or repository.
 type commandRunner interface {
 	Run(ctx context.Context, args ...string) ([]byte, error)
+	// RunToWriter streams stdout to w instead of buffering it, for restic
+	// invocations whose output is the actual artifact content (dump)
+	// rather than a small JSON/status payload - buffering a
+	// multi-gigabyte database dump in memory before writing it out would
+	// be wasteful at best.
+	RunToWriter(ctx context.Context, w io.Writer, args ...string) error
 }
 
 // execRunner is the real commandRunner: it shells out to the restic binary.
@@ -45,6 +52,23 @@ func (r *execRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 		return stdout.Bytes(), fmt.Errorf("restic %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
+}
+
+func (r *execRunner) RunToWriter(ctx context.Context, w io.Writer, args ...string) error {
+	fullArgs := append([]string{"--repo", r.repository}, args...)
+	fullArgs = append(fullArgs, r.extraArgs...)
+
+	cmd := exec.CommandContext(ctx, r.binary, fullArgs...)
+	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD_FILE="+r.passwordFile)
+
+	var stderr bytes.Buffer
+	cmd.Stdout = w
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("restic %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
 // ResticProvider implements StorageProvider by shelling out to the restic
@@ -126,11 +150,61 @@ func parseBackupSnapshotID(output []byte) (core.SnapshotID, error) {
 	return "", fmt.Errorf("no summary message in backup output")
 }
 
+// Retrieve writes a snapshot's content directly to a.Path. Deliberately
+// uses `restic dump`, not `restic restore --target`: confirmed against a
+// real repository, restore reconstructs the snapshot's entire original
+// absolute path underneath --target (e.g. a snapshot of
+// /tmp/bop/pg-testdb-123 restored with --target /tmp/restored-db lands at
+// /tmp/restored-db/tmp/bop/pg-testdb-123, not at /tmp/restored-db itself) -
+// restore has no "write directly to this path" mode. BOP always backs up
+// exactly one file per Store() call, so `dump`, which streams a single
+// file's exact content to stdout given its in-snapshot path, is the
+// correct primitive: look up that path from the snapshot's own recorded
+// metadata (no separate bookkeeping needed), then dump straight to a.Path.
 func (p *ResticProvider) Retrieve(ctx context.Context, id core.SnapshotID, a core.Artifact) error {
-	if _, err := p.run.Run(ctx, "restore", string(id), "--target", a.Path); err != nil {
-		return fmt.Errorf("restic restore: %w", err)
+	out, err := p.run.Run(ctx, "snapshots", string(id), "--json")
+	if err != nil {
+		return fmt.Errorf("restic snapshots: %w", err)
+	}
+	var snaps []resticSnapshot
+	if err := json.Unmarshal(out, &snaps); err != nil {
+		return fmt.Errorf("parse restic snapshots output: %w", err)
+	}
+	if len(snaps) == 0 || len(snaps[0].Paths) == 0 {
+		return fmt.Errorf("snapshot %s: no source path recorded", id)
+	}
+
+	f, err := os.Create(a.Path)
+	if err != nil {
+		return fmt.Errorf("create restore target %s: %w", a.Path, err)
+	}
+	defer f.Close()
+
+	if err := p.run.RunToWriter(ctx, f, "dump", string(id), resticDumpPath(snaps[0].Paths[0])); err != nil {
+		return fmt.Errorf("restic dump: %w", err)
 	}
 	return nil
+}
+
+// resticDumpPath converts a path as recorded in a snapshot's "paths"
+// metadata into the form restic's dump/ls commands expect for lookups
+// within the snapshot tree. On Windows, restic stores an absolute path's
+// drive letter as a top-level path component internally (C:\foo\bar
+// becomes /C/foo/bar) - confirmed against a real repository; the
+// "paths" field in `snapshots --json` still reports the original
+// Windows-style argument, not this internal form, so dump fails to find
+// the file unless this conversion is applied first. On every other
+// platform, paths are already unix-style and this is a no-op - BOP's
+// documented deployment target is Linux, where this never triggers.
+func resticDumpPath(p string) string {
+	if len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/') && isASCIILetter(p[0]) {
+		return "/" + string(p[0]) + strings.ReplaceAll(p[2:], `\`, "/")
+	}
+	return p
+}
+
+func isASCIILetter(b byte) bool {
+	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
 }
 
 // Verify is deliberately cheap: an existence check, not `restic check`
@@ -166,6 +240,7 @@ type resticSnapshot struct {
 	Hostname string    `json:"hostname"`
 	Time     time.Time `json:"time"`
 	Tags     []string  `json:"tags"`
+	Paths    []string  `json:"paths"`
 }
 
 func (p *ResticProvider) Snapshots(ctx context.Context) ([]core.Snapshot, error) {
