@@ -1,12 +1,16 @@
-// Command bop is the Backup Orchestration Platform entrypoint. The CLI
-// (Cobra, subcommands) is not wired up yet; this is a build placeholder
-// while the core interfaces and pipeline are scaffolded.
+// Command bop is the Backup Orchestration Platform entrypoint.
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
 
-var version = "dev"
+	"bop/internal/cli"
+)
 
 func main() {
-	fmt.Printf("bop %s (scaffolding, no subcommands yet)\n", version)
+	if err := cli.NewRootCmd().Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 }
