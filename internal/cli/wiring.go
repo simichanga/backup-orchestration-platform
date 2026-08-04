@@ -15,6 +15,7 @@ import (
 	"bop/internal/core"
 	"bop/internal/inventory"
 	"bop/internal/metadata"
+	"bop/internal/plugin/filesystem"
 	"bop/internal/plugin/postgres"
 	"bop/internal/queue"
 	"bop/internal/storage"
@@ -79,6 +80,7 @@ func buildApp(configPath string) (*app, error) {
 	ctl := controller.New(inv, md, sp, cfg.Verification, cfg.Controller.TempDir, cfg.Controller.JobTimeout)
 	ctl.Logger = logger
 	ctl.RegisterPlugin("postgres", postgres.NewFactory())
+	ctl.RegisterPlugin("filesystem", filesystem.NewFactory())
 
 	q := queue.NewMemory(queueCapacity)
 

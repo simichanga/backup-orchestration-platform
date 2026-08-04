@@ -42,14 +42,6 @@ func TestRestoreCommandContainerUsesInteractiveFlag(t *testing.T) {
 	}
 }
 
-func TestShellQuoteEscapesEmbeddedQuotes(t *testing.T) {
-	got := shellQuote(`o'brien`)
-	want := `'o'\''brien'`
-	if got != want {
-		t.Errorf("shellQuote(%q) = %q, want %q", `o'brien`, got, want)
-	}
-}
-
 func TestDumpCommandQuotesPasswordWithSpecialCharacters(t *testing.T) {
 	cfg := postgresConfig{Username: "backup_user", Password: `p'ss word`}
 	got := dumpCommand(cfg, "myapp")

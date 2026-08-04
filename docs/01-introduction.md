@@ -127,6 +127,9 @@ servers:
     plugins:
       postgres:
       filesystem:
+        config:
+          paths:
+            - /var/www
     retention:
       daily: 7
       weekly: 4

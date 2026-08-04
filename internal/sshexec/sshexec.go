@@ -1,4 +1,9 @@
-package postgres
+// Package sshexec runs a shell command on a remote host over SSH,
+// capturing its output. Shared by every SSH-based plugin (postgres,
+// filesystem, ...) that connects using inventory.yaml's ssh_user/ssh_key,
+// so the connection and host-key-verification story lives in exactly one
+// place rather than diverging copies.
+package sshexec
 
 import (
 	"bytes"
@@ -12,36 +17,36 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// remoteExecutor abstracts running a command on the target host and
-// capturing its output, so command construction (dumpCommand,
-// restoreCommand) is unit-testable without a real SSH server.
-type remoteExecutor interface {
+// Executor abstracts running a command on the target host and capturing
+// its output, so plugin command construction is unit-testable without a
+// real SSH server.
+type Executor interface {
 	Run(ctx context.Context, command string, stdin io.Reader, stdout io.Writer) error
 }
 
-// sshExecutor is the real remoteExecutor: it dials fresh per call rather
-// than holding a persistent connection. A backup job runs infrequently
+// SSHExecutor is the real Executor: it dials fresh per call rather than
+// holding a persistent connection. A backup job runs infrequently
 // (nightly, per inventory schedule), so the SSH handshake overhead is
 // negligible, and dialing per call avoids adding a Close/lifecycle method
 // to the BackupPlugin interface for connection teardown.
-type sshExecutor struct {
-	addr    string // host:port
-	user    string
-	keyPath string
+type SSHExecutor struct {
+	Addr    string // host:port
+	User    string
+	KeyPath string
 }
 
-func (e *sshExecutor) Run(ctx context.Context, command string, stdin io.Reader, stdout io.Writer) error {
-	key, err := os.ReadFile(e.keyPath)
+func (e *SSHExecutor) Run(ctx context.Context, command string, stdin io.Reader, stdout io.Writer) error {
+	key, err := os.ReadFile(e.KeyPath)
 	if err != nil {
-		return fmt.Errorf("read ssh key %s: %w", e.keyPath, err)
+		return fmt.Errorf("read ssh key %s: %w", e.KeyPath, err)
 	}
 	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
-		return fmt.Errorf("parse ssh key %s: %w", e.keyPath, err)
+		return fmt.Errorf("parse ssh key %s: %w", e.KeyPath, err)
 	}
 
 	config := &ssh.ClientConfig{
-		User: e.user,
+		User: e.User,
 		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		// SECURITY (deferred, Phase 1 gap): accepts any host key, which is
 		// a MITM risk. No known_hosts verification exists yet - see
@@ -51,9 +56,9 @@ func (e *sshExecutor) Run(ctx context.Context, command string, stdin io.Reader, 
 		Timeout:         10 * time.Second,
 	}
 
-	client, err := ssh.Dial("tcp", e.addr, config)
+	client, err := ssh.Dial("tcp", e.Addr, config)
 	if err != nil {
-		return fmt.Errorf("ssh dial %s: %w", e.addr, err)
+		return fmt.Errorf("ssh dial %s: %w", e.Addr, err)
 	}
 	defer client.Close()
 

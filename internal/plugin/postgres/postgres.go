@@ -16,12 +16,13 @@ import (
 	"bop/internal/core"
 	"bop/internal/inventory"
 	"bop/internal/plugin"
+	"bop/internal/sshexec"
 )
 
 const pgDumpHeaderMarker = "PostgreSQL database dump"
 
 type Plugin struct {
-	exec    remoteExecutor
+	exec    sshexec.Executor
 	cfg     postgresConfig
 	tempDir string
 }
@@ -43,7 +44,7 @@ func NewFactory() func(srv inventory.Server, cfg *inventory.PluginConfig, tempDi
 		}
 
 		return &Plugin{
-			exec:    &sshExecutor{addr: srv.Host + ":22", user: srv.SSHUser, keyPath: srv.SSHKey},
+			exec:    &sshexec.SSHExecutor{Addr: srv.Host + ":22", User: srv.SSHUser, KeyPath: srv.SSHKey},
 			cfg:     pgCfg,
 			tempDir: tempDir,
 		}, nil
