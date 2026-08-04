@@ -1,0 +1,220 @@
+// Package controller implements the backup job pipeline documented in
+// docs/02-architecture.md's Backup Job Lifecycle: for each job, discover
+// resources, back them up, verify, store, record metadata, optionally
+// restore-test, and apply retention. The controller never contains
+// source-specific logic; it only calls the BackupPlugin and
+// StorageProvider ports.
+package controller
+
+import (
+	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"time"
+
+	"bop/internal/core"
+	"bop/internal/inventory"
+	"bop/internal/metadata"
+	"bop/internal/plugin"
+	"bop/internal/storage"
+)
+
+// PluginFactory constructs a BackupPlugin instance for a specific host,
+// given that host's inventory entry and its plugin-specific config. This
+// is the Plugin Engine's resolution seam: for Phase 1 a factory just
+// builds an in-process plugin, but the signature doesn't change if a
+// later factory shells out to a subprocess instead.
+type PluginFactory func(srv inventory.Server, cfg *inventory.PluginConfig) (plugin.BackupPlugin, error)
+
+// Controller is the pipeline's driver. It assumes the job it is given has
+// already been persisted to the metadata Store as queued by whoever
+// produced it (scheduler, CLI) - see internal/queue's Queue contract.
+type Controller struct {
+	Inventory    *inventory.Inventory
+	Metadata     *metadata.Store
+	Storage      storage.StorageProvider
+	Verification core.Verification // global default
+	TempDir      string
+	Logger       *slog.Logger // optional; defaults to slog.Default()
+
+	factories map[string]PluginFactory
+}
+
+func New(inv *inventory.Inventory, md *metadata.Store, sp storage.StorageProvider, verification core.Verification, tempDir string) *Controller {
+	return &Controller{
+		Inventory:    inv,
+		Metadata:     md,
+		Storage:      sp,
+		Verification: verification,
+		TempDir:      tempDir,
+		factories:    make(map[string]PluginFactory),
+	}
+}
+
+// RegisterPlugin makes a plugin available to the controller under name,
+// matching an inventory.yaml server's plugins key.
+func (c *Controller) RegisterPlugin(name string, factory PluginFactory) {
+	c.factories[name] = factory
+}
+
+func (c *Controller) logger() *slog.Logger {
+	if c.Logger != nil {
+		return c.Logger
+	}
+	return slog.Default()
+}
+
+// RunJob executes the documented backup pipeline for job. A returned error
+// means the job could not even be started (unknown host or plugin) - the
+// job's persisted status is left untouched in that case, since it was
+// never picked up. Once the job is marked in_progress, any failure
+// transitions it to failed before RunJob returns; it is never left
+// in_progress on a live error path (that state is reserved for detecting
+// a crashed controller on the next startup).
+func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
+	srv, ok := c.Inventory.Servers[job.Host]
+	if !ok {
+		return fmt.Errorf("controller: host %q not found in inventory", job.Host)
+	}
+
+	factory, ok := c.factories[job.Plugin]
+	if !ok {
+		return fmt.Errorf("controller: no plugin registered for %q", job.Plugin)
+	}
+
+	if err := c.Metadata.UpdateJobStatus(ctx, job.ID, core.JobStatusInProgress); err != nil {
+		return fmt.Errorf("controller: mark job %s in_progress: %w", job.ID, err)
+	}
+
+	if err := c.runPipeline(ctx, job, srv, factory); err != nil {
+		if uerr := c.Metadata.UpdateJobStatus(ctx, job.ID, core.JobStatusFailed); uerr != nil {
+			return fmt.Errorf("controller: job %s failed (%w); additionally failed to record failure: %v", job.ID, err, uerr)
+		}
+		return fmt.Errorf("controller: job %s failed: %w", job.ID, err)
+	}
+
+	return c.Metadata.UpdateJobStatus(ctx, job.ID, core.JobStatusCompleted)
+}
+
+// runPipeline discovers resources and backs each up independently: one
+// resource's failure does not stop the others from being attempted, so a
+// single broken database doesn't block backing up its neighbors on the
+// same host. The job is reported failed if any resource failed, but every
+// resource that did succeed still has its snapshot recorded.
+func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventory.Server, factory PluginFactory) error {
+	p, err := factory(srv, srv.Plugins[job.Plugin])
+	if err != nil {
+		return fmt.Errorf("instantiate plugin %q: %w", job.Plugin, err)
+	}
+
+	resources, err := p.Discover()
+	if err != nil {
+		return fmt.Errorf("discover on %q: %w", job.Host, err)
+	}
+
+	verification := resolveVerification(c.Verification, srv.Verification)
+
+	var errs []error
+	for _, res := range resources {
+		if err := c.backupResource(ctx, job, p, res, verification); err != nil {
+			errs = append(errs, fmt.Errorf("resource %q: %w", res.ID, err))
+		}
+	}
+
+	// Retention is a per-job step, not per-resource: run it once after all
+	// resources have been attempted, regardless of individual outcomes.
+	if err := c.Storage.ApplyRetention(job.Policy); err != nil {
+		errs = append(errs, fmt.Errorf("apply retention: %w", err))
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("%d error(s): %w", len(errs), errors.Join(errs...))
+	}
+	return nil
+}
+
+// backupResource runs one resource through Backup, Verify, checksum, Store,
+// metadata recording, storage-level Verify, and the optional restore test.
+func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.BackupPlugin, res core.Resource, verification core.Verification) error {
+	artifact, err := p.Backup(res)
+	if err != nil {
+		return fmt.Errorf("backup: %w", err)
+	}
+	// Cleanup must run on every path (success, verify failure, store
+	// failure, ...) or a long-running controller slowly fills its temp
+	// disk. This is the only failure mode here that is silent rather than
+	// loud, so it isn't allowed to depend on the happy path.
+	defer c.cleanupArtifact(artifact)
+
+	if err := p.Verify(artifact); err != nil {
+		return fmt.Errorf("verify artifact: %w", err)
+	}
+
+	checksum, err := checksumFile(artifact.Path)
+	if err != nil {
+		return fmt.Errorf("checksum: %w", err)
+	}
+	artifact.Checksum = checksum
+
+	// Encryption is deferred: no key management story exists yet (open
+	// decision, see project notes) - artifact.Encrypted stays false.
+
+	snapshotID, err := c.Storage.Store(artifact)
+	if err != nil {
+		return fmt.Errorf("store: %w", err)
+	}
+
+	snap := core.Snapshot{
+		ID:        snapshotID,
+		JobID:     job.ID,
+		Host:      job.Host,
+		Plugin:    job.Plugin,
+		Size:      artifact.Size,
+		Checksum:  artifact.Checksum,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := c.Metadata.RecordSnapshot(ctx, snap); err != nil {
+		return fmt.Errorf("record snapshot: %w", err)
+	}
+
+	if err := c.Storage.Verify(snapshotID); err != nil {
+		return fmt.Errorf("storage verify: %w", err)
+	}
+
+	if verification.Enabled {
+		target := core.Artifact{ResourceID: res.ID, Path: filepath.Join(verification.TargetDir, res.ID)}
+		if err := p.Restore(target); err != nil {
+			return fmt.Errorf("restore test: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (c *Controller) cleanupArtifact(a core.Artifact) {
+	if a.Path == "" {
+		return
+	}
+	if err := os.Remove(a.Path); err != nil && !os.IsNotExist(err) {
+		c.logger().Warn("cleanup temp artifact failed", "path", a.Path, "error", err)
+	}
+}
+
+func checksumFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("sha256:%x", h.Sum(nil)), nil
+}

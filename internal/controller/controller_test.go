@@ -1,0 +1,286 @@
+package controller
+
+import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"bop/internal/core"
+	"bop/internal/inventory"
+	"bop/internal/metadata"
+	"bop/internal/plugin"
+)
+
+// stubPlugin is a test double for plugin.BackupPlugin. Backup writes a real
+// temp file so the controller's checksum step has something to hash, and
+// so cleanup-on-every-path can be asserted against the filesystem.
+type stubPlugin struct {
+	resources  []core.Resource
+	backupErr  map[string]error // per-resource ID; nil entries mean success
+	verifyErr  error
+	restoreErr error
+	tempDir    string
+
+	restoreCalls int
+}
+
+func (p *stubPlugin) Discover() ([]core.Resource, error) { return p.resources, nil }
+
+func (p *stubPlugin) Backup(res core.Resource) (core.Artifact, error) {
+	if err := p.backupErr[res.ID]; err != nil {
+		return core.Artifact{}, err
+	}
+	path := filepath.Join(p.tempDir, "artifact-"+res.ID)
+	content := []byte("dummy-data-" + res.ID)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		return core.Artifact{}, err
+	}
+	return core.Artifact{ResourceID: res.ID, Path: path, Size: int64(len(content)), CreatedAt: time.Now()}, nil
+}
+
+func (p *stubPlugin) Restore(core.Artifact) error {
+	p.restoreCalls++
+	return p.restoreErr
+}
+
+func (p *stubPlugin) Verify(core.Artifact) error { return p.verifyErr }
+func (p *stubPlugin) Health() error              { return nil }
+func (p *stubPlugin) Metadata() core.PluginMetadata {
+	return core.PluginMetadata{Name: "stub", Version: "test"}
+}
+
+// stubStorage is a test double for storage.StorageProvider.
+type stubStorage struct {
+	storeErr     error
+	verifyErr    error
+	retentionErr error
+
+	stored        map[core.SnapshotID]core.Artifact
+	retentionCall int
+}
+
+func newStubStorage() *stubStorage {
+	return &stubStorage{stored: make(map[core.SnapshotID]core.Artifact)}
+}
+
+func (s *stubStorage) Store(a core.Artifact) (core.SnapshotID, error) {
+	if s.storeErr != nil {
+		return "", s.storeErr
+	}
+	id := core.SnapshotID("snap-" + a.ResourceID)
+	s.stored[id] = a
+	return id, nil
+}
+
+func (s *stubStorage) Retrieve(core.SnapshotID, core.Artifact) error { return nil }
+func (s *stubStorage) Verify(core.SnapshotID) error                  { return s.verifyErr }
+func (s *stubStorage) Delete(core.SnapshotID) error                  { return nil }
+func (s *stubStorage) Snapshots() ([]core.Snapshot, error)           { return nil, nil }
+func (s *stubStorage) ApplyRetention(core.Policy) error {
+	s.retentionCall++
+	return s.retentionErr
+}
+
+func testInventory(verification *core.Verification) *inventory.Inventory {
+	return &inventory.Inventory{
+		Servers: map[string]inventory.Server{
+			"prod-db": {
+				Host:         "192.168.1.100",
+				Plugins:      map[string]*inventory.PluginConfig{"postgres": nil},
+				Retention:    core.Policy{Daily: 7},
+				Verification: verification,
+			},
+		},
+	}
+}
+
+func setup(t *testing.T, p *stubPlugin, s *stubStorage, inv *inventory.Inventory) (*Controller, *metadata.Store) {
+	t.Helper()
+	md, err := metadata.Open(":memory:")
+	if err != nil {
+		t.Fatalf("metadata.Open: %v", err)
+	}
+	t.Cleanup(func() { md.Close() })
+
+	c := New(inv, md, s, core.Verification{Enabled: false}, t.TempDir())
+	c.RegisterPlugin("postgres", func(inventory.Server, *inventory.PluginConfig) (plugin.BackupPlugin, error) {
+		return p, nil
+	})
+	return c, md
+}
+
+func TestRunJobSuccess(t *testing.T) {
+	dir := t.TempDir()
+	p := &stubPlugin{
+		resources: []core.Resource{{ID: "myapp"}},
+		backupErr: map[string]error{},
+		tempDir:   dir,
+	}
+	s := newStubStorage()
+	c, md := setup(t, p, s, testInventory(nil))
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, Policy: core.Policy{Daily: 7}, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	if err := c.RunJob(ctx, job); err != nil {
+		t.Fatalf("RunJob: %v", err)
+	}
+
+	got, err := md.GetJob(ctx, "job-1")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.Status != core.JobStatusCompleted {
+		t.Errorf("job status = %q, want completed", got.Status)
+	}
+
+	snaps, err := md.ListSnapshots(ctx, "prod-db")
+	if err != nil {
+		t.Fatalf("ListSnapshots: %v", err)
+	}
+	if len(snaps) != 1 {
+		t.Fatalf("ListSnapshots returned %d, want 1", len(snaps))
+	}
+	if snaps[0].Checksum == "" {
+		t.Errorf("snapshot checksum is empty")
+	}
+
+	if s.retentionCall != 1 {
+		t.Errorf("ApplyRetention called %d times, want 1", s.retentionCall)
+	}
+
+	// Temp artifact must be cleaned up after a successful run.
+	if _, err := os.Stat(filepath.Join(dir, "artifact-myapp")); !os.IsNotExist(err) {
+		t.Errorf("temp artifact still exists after successful run: %v", err)
+	}
+}
+
+func TestRunJobPartialResourceFailure(t *testing.T) {
+	dir := t.TempDir()
+	p := &stubPlugin{
+		resources: []core.Resource{{ID: "good"}, {ID: "bad"}},
+		backupErr: map[string]error{"bad": errors.New("dump failed")},
+		tempDir:   dir,
+	}
+	s := newStubStorage()
+	c, md := setup(t, p, s, testInventory(nil))
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, Policy: core.Policy{Daily: 7}, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	err := c.RunJob(ctx, job)
+	if err == nil {
+		t.Fatalf("RunJob: expected error from failed resource, got nil")
+	}
+
+	got, err := md.GetJob(ctx, "job-1")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.Status != core.JobStatusFailed {
+		t.Errorf("job status = %q, want failed", got.Status)
+	}
+
+	// The resource that succeeded must still have its snapshot recorded -
+	// one broken resource must not lose progress on the others.
+	snaps, err := md.ListSnapshots(ctx, "prod-db")
+	if err != nil {
+		t.Fatalf("ListSnapshots: %v", err)
+	}
+	if len(snaps) != 1 || snaps[0].ID != "snap-good" {
+		t.Errorf("ListSnapshots = %+v, want one snapshot for the good resource", snaps)
+	}
+
+	if s.retentionCall != 1 {
+		t.Errorf("ApplyRetention called %d times, want 1 (once per job, regardless of resource failures)", s.retentionCall)
+	}
+}
+
+func TestRunJobCleansUpArtifactOnMidPipelineFailure(t *testing.T) {
+	dir := t.TempDir()
+	p := &stubPlugin{
+		resources: []core.Resource{{ID: "myapp"}},
+		backupErr: map[string]error{},
+		verifyErr: errors.New("corrupt dump"),
+		tempDir:   dir,
+	}
+	s := newStubStorage()
+	c, md := setup(t, p, s, testInventory(nil))
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	if err := c.RunJob(ctx, job); err == nil {
+		t.Fatalf("RunJob: expected error from plugin.Verify failure, got nil")
+	}
+
+	got, err := md.GetJob(ctx, "job-1")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.Status != core.JobStatusFailed {
+		t.Errorf("job status = %q, want failed (must not be left in_progress)", got.Status)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "artifact-myapp")); !os.IsNotExist(err) {
+		t.Errorf("temp artifact still exists after a mid-pipeline failure: %v", err)
+	}
+}
+
+func TestRunJobUnknownHostLeavesJobUntouched(t *testing.T) {
+	p := &stubPlugin{tempDir: t.TempDir()}
+	s := newStubStorage()
+	c, md := setup(t, p, s, testInventory(nil))
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "no-such-host", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	if err := c.RunJob(ctx, job); err == nil {
+		t.Fatalf("RunJob: expected error for unknown host, got nil")
+	}
+
+	got, err := md.GetJob(ctx, "job-1")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.Status != core.JobStatusQueued {
+		t.Errorf("job status = %q, want unchanged (queued) since the job never started", got.Status)
+	}
+}
+
+func TestRunJobUsesPerHostVerificationOverride(t *testing.T) {
+	dir := t.TempDir()
+	p := &stubPlugin{resources: []core.Resource{{ID: "myapp"}}, backupErr: map[string]error{}, tempDir: dir}
+	s := newStubStorage()
+	override := &core.Verification{Enabled: true, TargetDir: filepath.Join(dir, "restore-test")}
+	c, md := setup(t, p, s, testInventory(override))
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	if err := c.RunJob(ctx, job); err != nil {
+		t.Fatalf("RunJob: %v", err)
+	}
+
+	if p.restoreCalls != 1 {
+		t.Errorf("plugin.Restore called %d times, want 1 (per-host verification override was enabled)", p.restoreCalls)
+	}
+}
