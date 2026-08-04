@@ -116,7 +116,7 @@ func setup(t *testing.T, p *stubPlugin, s *stubStorage, inv *inventory.Inventory
 	t.Cleanup(func() { md.Close() })
 
 	c := New(inv, md, s, core.Verification{Enabled: false}, t.TempDir(), 0)
-	c.RegisterPlugin("postgres", func(inventory.Server, *inventory.PluginConfig) (plugin.BackupPlugin, error) {
+	c.RegisterPlugin("postgres", func(inventory.Server, *inventory.PluginConfig, string) (plugin.BackupPlugin, error) {
 		return p, nil
 	})
 	return c, md

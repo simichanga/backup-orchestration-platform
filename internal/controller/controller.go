@@ -25,11 +25,12 @@ import (
 )
 
 // PluginFactory constructs a BackupPlugin instance for a specific host,
-// given that host's inventory entry and its plugin-specific config. This
-// is the Plugin Engine's resolution seam: for Phase 1 a factory just
-// builds an in-process plugin, but the signature doesn't change if a
-// later factory shells out to a subprocess instead.
-type PluginFactory func(srv inventory.Server, cfg *inventory.PluginConfig) (plugin.BackupPlugin, error)
+// given that host's inventory entry, its plugin-specific config, and the
+// controller's configured temp directory (controller.temp_dir) for
+// writing artifacts. This is the Plugin Engine's resolution seam: for
+// Phase 1 a factory just builds an in-process plugin, but the signature
+// doesn't change if a later factory shells out to a subprocess instead.
+type PluginFactory func(srv inventory.Server, cfg *inventory.PluginConfig, tempDir string) (plugin.BackupPlugin, error)
 
 // Controller is the pipeline's driver. It assumes the job it is given has
 // already been persisted to the metadata Store as queued by whoever
@@ -135,7 +136,7 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 // same host. The job is reported failed if any resource failed, but every
 // resource that did succeed still has its snapshot recorded.
 func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventory.Server, factory PluginFactory) error {
-	p, err := factory(srv, srv.Plugins[job.Plugin])
+	p, err := factory(srv, srv.Plugins[job.Plugin], c.TempDir)
 	if err != nil {
 		return fmt.Errorf("instantiate plugin %q: %w", job.Plugin, err)
 	}
