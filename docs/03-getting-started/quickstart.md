@@ -142,12 +142,17 @@ servers:
       enabled: true
 ```
 
-> **Current limitation:** this restore-test step is not yet functional for
-> the **postgres** plugin - it has no way to provision a scratch database to
-> restore into, so a job will fail at this step if you enable it here. It
-> **is** functional for the **filesystem** plugin, which restores into a
-> disposable directory instead. Leave `verification.enabled` off for
-> postgres-only inventories until this is built; see
+> **Current limitation:** this restore-test step will fail for the
+> **postgres** plugin as shipped - not because the restore mechanism is
+> broken (the actual SSH+psql invocation has been verified against a real
+> Postgres server, restoring a real dump into a real database with the data
+> intact), but because nothing provisions the scratch `<database>-bop-verify`
+> database first, and `psql` has nothing to connect to. Pre-create that
+> database by hand on the target and the restore-test succeeds; there is no
+> automatic provisioning yet. The **filesystem** plugin has no such gap - it
+> restores into a disposable directory it creates itself. Leave
+> `verification.enabled` off for postgres-only inventories until
+> auto-provisioning is built; see
 > [Writing a Plugin](../04-writing-plugins.md#restore-test-support) for
 > what a plugin needs to support it.
 

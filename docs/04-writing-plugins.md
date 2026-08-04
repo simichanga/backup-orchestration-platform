@@ -277,10 +277,18 @@ considered done, and a new plugin should be too:
    interaction** where feasible (e.g. filesystem's tar/untar pair was
    tested against a real local `tar` binary before ever touching SSH).
 3. **Real infrastructure**, even a throwaway one - both plugins were run
-   against a real Docker container (SSH + real Postgres) at least once.
-   This is what caught the restore-test permission bug described above; a
-   local round-trip test alone did not, because it never exercised a
-   differently-privileged remote user.
+   against a real Docker container (SSH + real Postgres) at least once,
+   covering `Backup` and `Restore` for both, not just `Backup`. This is what
+   caught two real bugs that unit tests alone did not: the restore-test
+   permission bug described above (never exercised a differently-privileged
+   remote user), and, separately, the fact that `postgres.Restore`'s actual
+   SSH+psql invocation had only ever been asserted against a fake executor's
+   recorded command string - proving the argv was well-formed, not that a
+   real `psql` fed that dump on stdin actually restores the data. Running it
+   for real (pg_dump a live table, restore into a separately pre-created
+   database, then independently query that database) confirmed the
+   mechanism itself is correct; the only real gap is the missing
+   auto-provisioning of the scratch database noted above.
 
 "Passes unit tests" and "verified against real infrastructure" are
 different claims - state honestly which one applies when you're done.
