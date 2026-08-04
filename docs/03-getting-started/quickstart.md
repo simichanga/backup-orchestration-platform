@@ -74,7 +74,21 @@ metrics:
   port: 9090
 ```
 
-## 5. Run the Controller
+## 5. Trust the Target Host's SSH Key
+
+BOP verifies every SSH connection against a known_hosts file - there is no
+insecure/skip-verification option, so this step is required, not optional.
+Add the target host's key the same way you would for the `ssh` CLI:
+
+```bash
+ssh-keyscan -H 192.168.1.100 >> /etc/bop/known_hosts
+```
+
+Verify the fingerprint against the host through a channel you trust (e.g.
+console access, your provisioning tool's output) before trusting it - this
+is the same verification `ssh` itself expects on a first connection.
+
+## 6. Run the Controller
 
 ```bash
 bop controller --config config.yaml
@@ -98,7 +112,7 @@ INFO  Retention applied
 INFO  Backup completed        duration=34s
 ```
 
-## 6. Verify the Snapshot
+## 7. Verify the Snapshot
 
 List snapshots:
 
@@ -113,9 +127,10 @@ ID        Host      Plugin     Time                 Size
 abc123    prod-db   postgres   2026-08-04 03:00:05  45MB
 ```
 
-## 7. Test a Restore
+## 8. Test a Restore
 
-BOP can automatically verify recoverability. Add a per-host override under
+BOP can automatically verify recoverability by restoring each backup to a
+scratch location as part of the pipeline. Add a per-host override under
 `prod-db` in inventory.yaml (see [Configuration Reference](configuration.md)
 for the global default):
 
@@ -125,19 +140,27 @@ servers:
     ...
     verification:
       enabled: true
-      target_dir: /tmp/bop-restore-test
 ```
 
-Now each backup will be restored to a temporary location, and the restore
-verified. You can also manually restore:
+> **Current limitation:** this restore-test step is not yet functional for
+> the **postgres** plugin - it has no way to provision a scratch database to
+> restore into, so a job will fail at this step if you enable it here. It
+> **is** functional for the **filesystem** plugin, which restores into a
+> disposable directory instead. Leave `verification.enabled` off for
+> postgres-only inventories until this is built; see
+> [Writing a Plugin](../04-writing-plugins.md#restore-test-support) for
+> what a plugin needs to support it.
+
+You can always manually restore a snapshot's raw artifact, independent of
+the (optional) automatic verification step above:
 
 ```bash
 bop restore --snapshot abc123 --target /tmp/restored-db
 ```
 
-## 8. Next Steps
+## 9. Next Steps
 
-- Add more servers to inventory.
+- Add more servers to inventory - see the [Inventory Reference](inventory-reference.md).
 - Explore retention policies.
 - Set up Prometheus metrics scraping.
-- Write a custom plugin.
+- [Write a custom plugin](../04-writing-plugins.md).

@@ -282,17 +282,26 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 		// res.ID itself: restoring into the live resource during routine
 		// verification would be a data-loss bug. Uses the artifact we
 		// already produced (still on disk - cleanup runs via defer after
-		// this function returns), not verification.TargetDir: that
-		// setting is a filesystem location, meaningful for a future
-		// filesystem-style plugin's restore destination, but this
-		// controller has no business inventing a path for a database-style
-		// plugin whose "restore target" is an identifier, not a directory.
+		// this function returns), not verification.TargetDir: the
+		// controller has no business inventing a restore location for a
+		// plugin whose "restore target" might be an identifier (a database
+		// name) rather than a directory - that decision belongs to each
+		// plugin. In practice, the filesystem plugin picks its own fixed
+		// scratch location internally (see restoreTestBase in
+		// internal/plugin/filesystem) rather than reading TargetDir, so
+		// this config field is not currently wired into either plugin's
+		// restore-test path - a config.yaml/inventory.yaml value with no
+		// effect. Threading it through would mean either encoding it into
+		// the artifact or extending BackupPlugin.Restore's signature;
+		// deferred until a plugin actually needs it configurable rather
+		// than a plugin-chosen default.
 		//
-		// No plugin currently provisions a scratch database, so this will
-		// fail until one does (see project notes) - failing clearly here
-		// is correct: silently treating an unrun restore-test as a pass
-		// would be false confidence in exactly the property ("can this
-		// actually be restored?") the feature exists to prove.
+		// No plugin currently provisions a scratch database for
+		// identifier-style resources (e.g. postgres), so this will fail
+		// for those until one does (see project notes) - failing clearly
+		// here is correct: silently treating an unrun restore-test as a
+		// pass would be false confidence in exactly the property ("can
+		// this actually be restored?") the feature exists to prove.
 		restoreTarget := artifact
 		restoreTarget.ResourceID = res.ID + plugin.RestoreTestSuffix
 

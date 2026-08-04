@@ -60,7 +60,11 @@ logging:
 # Verification defaults (global default; can be overridden per host in inventory.yaml)
 verification:
   enabled: false
-  target_dir: /tmp/bop-verify       # Where restore tests are performed
+  # target_dir is currently not read by either plugin's restore-test path
+  # (each plugin picks its own scratch location internally) - kept here
+  # since it's part of the documented schema, not because it has an effect
+  # yet. See docs/04-writing-plugins.md#restore-test-support.
+  target_dir: /tmp/bop-verify
 
 # Plugin registry (unused in Phase 1 - core plugins ship compiled into the
 # bop binary; this is for future third-party/out-of-tree plugins)
@@ -95,8 +99,8 @@ Run bop controller --help for all flags.
 
 ## Inventory File Structure
 
-> **Note:** a dedicated Inventory reference doc doesn't exist yet. Until then,
-> see the [Quickstart](quickstart.md) for a worked `inventory.yaml` example.
+See the [Inventory Reference](inventory-reference.md) for the full
+`inventory.yaml` schema.
 
 Per-host verification overrides the global `verification` block above:
 
