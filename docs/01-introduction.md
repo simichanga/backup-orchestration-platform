@@ -125,8 +125,8 @@ servers:
   prod-db:
     host: 192.168.1.10
     plugins:
-      - postgres
-      - filesystem
+      postgres:
+      filesystem:
     retention:
       daily: 7
       weekly: 4
@@ -134,8 +134,13 @@ servers:
   staging:
     host: 192.168.1.20
     plugins:
-      - docker
+      docker:
 ```
+
+`plugins` is a map, not a list: a plugin with no configuration (like `docker`
+above) has a null value, and a plugin that needs configuration (like
+`postgres`) nests it under a `config` key - see the [Quickstart](03-getting-started/quickstart.md)
+for a worked example.
 
 Adding a new server means adding a YAML entry - not changing code. The
 inventory format is designed to evolve from flat files to a database or

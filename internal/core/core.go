@@ -44,10 +44,19 @@ type Snapshot struct {
 
 // Policy is a retention policy applied by a StorageProvider.
 type Policy struct {
-	Daily   int
-	Weekly  int
-	Monthly int
-	Yearly  int
+	Daily   int `mapstructure:"daily" yaml:"daily"`
+	Weekly  int `mapstructure:"weekly" yaml:"weekly"`
+	Monthly int `mapstructure:"monthly" yaml:"monthly"`
+	Yearly  int `mapstructure:"yearly" yaml:"yearly"`
+}
+
+// Verification configures the optional restore-test pipeline step. It is
+// used both as the global default (config.yaml, loaded via Viper) and as a
+// per-host override (inventory.yaml, loaded directly via yaml.v3) - hence
+// carrying both struct tags.
+type Verification struct {
+	Enabled   bool   `mapstructure:"enabled" yaml:"enabled"`
+	TargetDir string `mapstructure:"target_dir" yaml:"target_dir"`
 }
 
 // JobStatus is the lifecycle state of a Job as tracked by the metadata service.
