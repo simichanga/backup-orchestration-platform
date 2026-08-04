@@ -352,6 +352,51 @@ func TestRunJobRespectsJobTimeout(t *testing.T) {
 	}
 }
 
+// TestRunJobHandlesExternalContextCancellation exercises a different path
+// than TestRunJobRespectsJobTimeout: here the context RunJob was given is
+// cancelled directly (e.g. "bop controller" shutting down on
+// SIGINT/SIGTERM via signal.NotifyContext), rather than a c.JobTimeout
+// child context expiring. The scheduler's single-consumer design (see
+// internal/scheduler) relies on this ending the job failed, not stuck
+// in_progress, exactly like the JobTimeout case - confirming it here
+// rather than assuming the two paths behave the same.
+func TestRunJobHandlesExternalContextCancellation(t *testing.T) {
+	p := &stubPlugin{
+		resources:         []core.Resource{{ID: "myapp"}},
+		blockUntilCtxDone: true,
+		tempDir:           t.TempDir(),
+	}
+	s := newStubStorage()
+	c, md := setup(t, p, s, testInventory(nil))
+	ctx, cancel := context.WithCancel(context.Background())
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(context.Background(), job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	err := c.RunJob(ctx, job)
+	if err == nil {
+		t.Fatalf("RunJob: expected an error from external cancellation, got nil")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("RunJob error = %v, want context.Canceled in the chain", err)
+	}
+
+	got, getErr := md.GetJob(context.Background(), "job-1")
+	if getErr != nil {
+		t.Fatalf("GetJob: %v", getErr)
+	}
+	if got.Status != core.JobStatusFailed {
+		t.Errorf("job status = %q, want failed (shutdown mid-job must not leave it stuck in_progress)", got.Status)
+	}
+}
+
 // recordingPublisher is an events.Publisher test double that records every
 // event's type in emission order.
 type recordingPublisher struct {

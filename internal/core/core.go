@@ -2,7 +2,10 @@
 // queue ports. Keeping them here avoids import cycles between those packages.
 package core
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // Resource is a single backed-up-able unit discovered by a plugin
 // (e.g. one database, one filesystem path).
@@ -87,4 +90,19 @@ type Job struct {
 	Policy   Policy
 	Status   JobStatus
 	QueuedAt time.Time
+}
+
+// NewJob builds a job ready to be persisted as queued. Both the scheduler
+// and the "bop backup" command must construct jobs identically for the
+// durability contract (see internal/queue's Queue doc) to mean the same
+// thing regardless of who created the job.
+func NewJob(host, plugin string, policy Policy) Job {
+	return Job{
+		ID:       fmt.Sprintf("%s-%s-%d", host, plugin, time.Now().UnixNano()),
+		Host:     host,
+		Plugin:   plugin,
+		Policy:   policy,
+		Status:   JobStatusQueued,
+		QueuedAt: time.Now().UTC(),
+	}
 }

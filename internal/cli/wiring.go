@@ -5,23 +5,33 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
 
 	"bop/internal/config"
 	"bop/internal/controller"
+	"bop/internal/core"
 	"bop/internal/inventory"
 	"bop/internal/metadata"
 	"bop/internal/plugin/postgres"
+	"bop/internal/queue"
 	"bop/internal/storage"
 )
+
+// queueCapacity is the in-memory Queue's buffer size. Fixed for Phase 1
+// rather than configurable: a full queue is not a lost job (see
+// internal/queue's durability contract and "bop controller"'s startup
+// reconciliation), so sizing this precisely is not load-bearing yet.
+const queueCapacity = 256
 
 // app bundles everything a command needs. Callers must call Close when done.
 type app struct {
 	Config     *config.Config
 	Inventory  *inventory.Inventory
 	Metadata   *metadata.Store
+	Queue      queue.Queue
 	Controller *controller.Controller
 	Logger     *slog.Logger
 }
@@ -70,7 +80,52 @@ func buildApp(configPath string) (*app, error) {
 	ctl.Logger = logger
 	ctl.RegisterPlugin("postgres", postgres.NewFactory())
 
-	return &app{Config: cfg, Inventory: inv, Metadata: md, Controller: ctl, Logger: logger}, nil
+	q := queue.NewMemory(queueCapacity)
+
+	return &app{Config: cfg, Inventory: inv, Metadata: md, Queue: q, Controller: ctl, Logger: logger}, nil
+}
+
+// reconcileQueuedJobs re-enqueues every job persisted as queued. The
+// in-memory Queue never survives a process restart, but the metadata
+// service does (see internal/queue's durability contract) - this is what
+// actually rehydrates the queue from that persisted state on every
+// "bop controller" startup, rather than leaving the contract's recovery
+// promise unfulfilled.
+func (a *app) reconcileQueuedJobs(ctx context.Context) error {
+	jobs, err := a.Metadata.ListJobsByStatus(ctx, core.JobStatusQueued)
+	if err != nil {
+		return fmt.Errorf("list queued jobs: %w", err)
+	}
+	for _, job := range jobs {
+		if err := a.Queue.Enqueue(job); err != nil {
+			a.Logger.Error("reconcile: enqueue failed, job remains queued", "job_id", job.ID, "error", err)
+		}
+	}
+	if len(jobs) > 0 {
+		a.Logger.Info("reconciled queued jobs from a previous run", "count", len(jobs))
+	}
+	return nil
+}
+
+// runConsumer drains the queue and runs jobs one at a time, serially, until
+// ctx is cancelled. Deliberately not a worker pool for Phase 1: the
+// documented scalability model is single-controller, and ApplyRetention's
+// restic "forget --prune" takes an exclusive repository lock - concurrent
+// jobs against the same repository would collide on it. A single consumer
+// makes that structurally impossible instead of requiring a
+// prune-serialization mechanism that doesn't exist yet.
+// controller.concurrency is documented but deliberately unenforced until a
+// future phase's worker pool needs it.
+func (a *app) runConsumer(ctx context.Context) {
+	for {
+		job, err := a.Queue.Dequeue(ctx)
+		if err != nil {
+			return // ctx cancelled: normal shutdown
+		}
+		if err := a.Controller.RunJob(ctx, job); err != nil {
+			a.Logger.Error("job failed", "job_id", job.ID, "host", job.Host, "plugin", job.Plugin, "error", err)
+		}
+	}
 }
 
 func newLogger(cfg config.LoggingConfig) *slog.Logger {

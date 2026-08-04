@@ -52,6 +52,28 @@ structure, later phases (a shared queue via NATS/Redis, for multi-controller
 deployments - see Scalability Model) are a new adapter, not a redesign of the
 scheduler or controller.
 
+**Phase 1 implementation notes**: the scheduler (`internal/scheduler`) parses
+each inventory server's `schedule` field as a standard 5-field cron
+expression (via `robfig/cron`) and validates all of them at startup - a bad
+expression fails `bop controller` immediately rather than silently never
+firing. A server with no `schedule` is skipped and stays manual-only,
+triggered with `bop backup`. Each tick creates one job per plugin configured
+on that server (a host running both `postgres` and `filesystem` gets two
+jobs, not one), persists each as `queued` before enqueueing (see the `Queue`
+durability contract above), and emits `BackupRequested`.
+
+`bop controller` runs a single serial consumer that drains the `Queue` and
+processes one job at a time - not a worker pool. This is deliberate for
+Phase 1: `ApplyRetention`'s `restic forget --prune` takes an exclusive
+repository lock, so concurrent jobs against the same repository would
+collide on it. `controller.concurrency` is documented but not yet enforced;
+honoring it requires a per-repository lock or prune-serialization strategy
+that a future phase's worker pool will need to add. On startup,
+`bop controller` also re-enqueues any job still in the metadata service's
+`queued` state (from a previous run's crash or a full `Queue`) before
+starting the scheduler and consumer, so the durability contract's recovery
+promise is actually kept rather than aspirational.
+
 ### Controller
 
 The controller is the brain. It loops over the queue, and for each job:

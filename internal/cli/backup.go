@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,14 +34,7 @@ func newBackupCmd(configPath *string) *cobra.Command {
 			}
 
 			ctx := cmd.Context()
-			job := core.Job{
-				ID:       fmt.Sprintf("%s-%s-%d", host, pluginName, time.Now().UnixNano()),
-				Host:     host,
-				Plugin:   pluginName,
-				Policy:   srv.Retention,
-				Status:   core.JobStatusQueued,
-				QueuedAt: time.Now().UTC(),
-			}
+			job := core.NewJob(host, pluginName, srv.Retention)
 
 			// Persisted before running, per the job-durability contract
 			// (see internal/queue's Queue doc): the metadata service is

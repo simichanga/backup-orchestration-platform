@@ -136,6 +136,45 @@ func TestFailOrphanedJobs(t *testing.T) {
 	}
 }
 
+func TestListJobsByStatus(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	jobs := []core.Job{
+		{ID: "queued-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: now},
+		{ID: "queued-2", Host: "prod-db", Plugin: "filesystem", Status: core.JobStatusQueued, QueuedAt: now.Add(time.Minute)},
+		{ID: "in-progress-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusInProgress, QueuedAt: now},
+	}
+	for _, j := range jobs {
+		if err := s.CreateJob(ctx, j); err != nil {
+			t.Fatalf("CreateJob(%s): %v", j.ID, err)
+		}
+	}
+
+	got, err := s.ListJobsByStatus(ctx, core.JobStatusQueued)
+	if err != nil {
+		t.Fatalf("ListJobsByStatus: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListJobsByStatus returned %d jobs, want 2", len(got))
+	}
+	if got[0].ID != "queued-1" || got[1].ID != "queued-2" {
+		t.Errorf("ListJobsByStatus order = [%s, %s], want [queued-1, queued-2]", got[0].ID, got[1].ID)
+	}
+}
+
+func TestListJobsByStatusEmpty(t *testing.T) {
+	s := openTestStore(t)
+	got, err := s.ListJobsByStatus(context.Background(), core.JobStatusQueued)
+	if err != nil {
+		t.Fatalf("ListJobsByStatus: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListJobsByStatus returned %d jobs, want 0", len(got))
+	}
+}
+
 func TestRecordAndListSnapshots(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

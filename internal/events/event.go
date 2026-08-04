@@ -16,6 +16,12 @@ import (
 type Type string
 
 const (
+	// TypeBackupRequested is emitted by the scheduler when it creates a job,
+	// before the job is even enqueued - distinct from TypeBackupStarted,
+	// which the controller emits once it actually picks the job up. A job
+	// triggered manually via "bop backup" skips this event since it never
+	// goes through the scheduler.
+	TypeBackupRequested Type = "BackupRequested"
 	TypeBackupStarted   Type = "BackupStarted"
 	TypeBackupCompleted Type = "BackupCompleted"
 	TypeBackupFailed    Type = "BackupFailed"
