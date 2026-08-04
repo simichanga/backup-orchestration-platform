@@ -1,0 +1,21 @@
+# Build artifacts
+/bin/
+*.exe
+*.test
+*.out
+
+# Go
+/vendor/
+
+# Local runtime data
+*.db
+*.log
+/tmp/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code local settings (personal, not shared)
+.claude/settings.local.json
