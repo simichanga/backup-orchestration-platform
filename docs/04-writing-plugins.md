@@ -288,7 +288,11 @@ considered done, and a new plugin should be too:
    for real (pg_dump a live table, restore into a separately pre-created
    database, then independently query that database) confirmed the
    mechanism itself is correct; the only real gap is the missing
-   auto-provisioning of the scratch database noted above.
+   auto-provisioning of the scratch database noted above. The `docker exec`
+   branch of `dumpCommand`/`restoreCommand` (used when a server's postgres
+   config sets `container`) got the same treatment separately, against a
+   real nested Postgres-in-Docker target - also confirmed correct, no
+   fix needed.
 
 "Passes unit tests" and "verified against real infrastructure" are
 different claims - state honestly which one applies when you're done.
