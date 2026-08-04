@@ -39,6 +39,7 @@ type Snapshot struct {
 	Host      string
 	Plugin    string
 	Size      int64
+	Checksum  string
 	CreatedAt time.Time
 }
 
