@@ -8,7 +8,7 @@ import (
 func TestNewRootCmdHasExpectedSubcommands(t *testing.T) {
 	root := NewRootCmd()
 
-	want := []string{"version", "controller", "backup", "snapshot", "restore"}
+	want := []string{"version", "controller", "backup", "snapshot", "restore", "health"}
 	for _, name := range want {
 		cmd, _, err := root.Find([]string{name})
 		if err != nil || cmd == root {

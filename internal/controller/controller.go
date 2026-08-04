@@ -67,6 +67,27 @@ func (c *Controller) RegisterPlugin(name string, factory PluginFactory) {
 	c.factories[name] = factory
 }
 
+// BuildPlugin instantiates the plugin registered under pluginName for host,
+// the same host/factory resolution RunJob does, without running a job
+// through it. For callers that need a plugin instance directly - a health
+// check, for instance - rather than the full backup pipeline (metadata
+// recording, verification, retention).
+func (c *Controller) BuildPlugin(host, pluginName string) (plugin.BackupPlugin, error) {
+	srv, ok := c.Inventory.Servers[host]
+	if !ok {
+		return nil, fmt.Errorf("controller: host %q not found in inventory", host)
+	}
+	factory, ok := c.factories[pluginName]
+	if !ok {
+		return nil, fmt.Errorf("controller: no plugin registered for %q", pluginName)
+	}
+	p, err := factory(srv, srv.Plugins[pluginName], c.TempDir)
+	if err != nil {
+		return nil, fmt.Errorf("controller: instantiate plugin %q for %q: %w", pluginName, host, err)
+	}
+	return p, nil
+}
+
 func (c *Controller) logger() *slog.Logger {
 	if c.Logger != nil {
 		return c.Logger

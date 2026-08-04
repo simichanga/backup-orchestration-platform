@@ -88,7 +88,25 @@ Verify the fingerprint against the host through a channel you trust (e.g.
 console access, your provisioning tool's output) before trusting it - this
 is the same verification `ssh` itself expects on a first connection.
 
-## 6. Run the Controller
+## 6. Check Connectivity
+
+Before relying on a scheduled backup to find out something's wrong, confirm
+BOP can actually reach the host:
+
+```bash
+bop health --host prod-db --plugin postgres
+```
+
+```
+prod-db/postgres: ok
+```
+
+This runs the same cheap check (`BackupPlugin.Health` - not a full backup)
+each plugin defines: it opens the same SSH connection a real backup would
+and confirms it works. A non-zero exit and an error on stderr means
+something in inventory/SSH/known_hosts setup needs fixing before moving on.
+
+## 7. Run the Controller
 
 ```bash
 bop controller --config config.yaml
@@ -112,7 +130,7 @@ INFO  Retention applied
 INFO  Backup completed        duration=34s
 ```
 
-## 7. Verify the Snapshot
+## 8. Verify the Snapshot
 
 List snapshots:
 
@@ -127,7 +145,7 @@ ID        Host      Plugin     Time                 Size
 abc123    prod-db   postgres   2026-08-04 03:00:05  45MB
 ```
 
-## 8. Test a Restore
+## 9. Test a Restore
 
 BOP can automatically verify recoverability by restoring each backup to a
 scratch location as part of the pipeline. Add a per-host override under
@@ -161,7 +179,7 @@ the (optional) automatic verification step above:
 bop restore --snapshot abc123 --target /tmp/restored-db
 ```
 
-## 9. Next Steps
+## 10. Next Steps
 
 - Add more servers to inventory - see the [Inventory Reference](inventory-reference.md).
 - Explore retention policies.

@@ -187,11 +187,11 @@ this actually be restored?") the feature exists to prove.
 
 Reports whether the plugin can currently reach its target - cheap and
 fast, not a full backup dry-run. Both built-in plugins just run `echo ok`
-over the same SSH connection they'd use for a real backup. Not currently
-called anywhere in the CLI or controller pipeline (no `bop health`
-command exists yet) - implement it anyway, since it's part of the
-interface contract and a future health-check command or API endpoint will
-need it.
+over the same SSH connection they'd use for a real backup. Wired up as
+`bop health --host <host> --plugin <plugin>` (`internal/cli/health.go`,
+`Controller.BuildPlugin`) - implement it for any new plugin too, both
+because it's part of the interface contract and because this command
+already calls it.
 
 ### `Metadata`
 

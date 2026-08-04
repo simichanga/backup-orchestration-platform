@@ -17,6 +17,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(newBackupCmd(&configPath))
 	root.AddCommand(newSnapshotCmd(&configPath))
 	root.AddCommand(newRestoreCmd(&configPath))
+	root.AddCommand(newHealthCmd(&configPath))
 
 	return root
 }
