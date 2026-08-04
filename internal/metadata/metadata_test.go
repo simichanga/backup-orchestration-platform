@@ -48,6 +48,13 @@ func TestCreateAndGetJob(t *testing.T) {
 	if got.Policy != job.Policy {
 		t.Errorf("GetJob.Policy = %+v, want %+v", got.Policy, job.Policy)
 	}
+	// SQLite has no native datetime type; modernc round-trips time.Time
+	// through a string layout, which can silently shift precision or
+	// location. Use Equal, not ==, since == also compares monotonic
+	// reading and location, not just the instant.
+	if !got.QueuedAt.Equal(job.QueuedAt) {
+		t.Errorf("GetJob.QueuedAt = %v, want %v", got.QueuedAt, job.QueuedAt)
+	}
 }
 
 func TestGetJobNotFound(t *testing.T) {
@@ -135,9 +142,9 @@ func TestRecordAndListSnapshots(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	snaps := []core.Snapshot{
-		{ID: "snap-1", Host: "prod-db", Plugin: "postgres", Size: 100, Checksum: "sha256:aaa", CreatedAt: now},
-		{ID: "snap-2", Host: "prod-db", Plugin: "postgres", Size: 200, Checksum: "sha256:bbb", CreatedAt: now.Add(time.Minute)},
-		{ID: "snap-3", Host: "other-host", Plugin: "postgres", Size: 300, Checksum: "sha256:ccc", CreatedAt: now},
+		{ID: "snap-1", JobID: "job-1", Host: "prod-db", Plugin: "postgres", Size: 100, Checksum: "sha256:aaa", CreatedAt: now},
+		{ID: "snap-2", JobID: "job-2", Host: "prod-db", Plugin: "postgres", Size: 200, Checksum: "sha256:bbb", CreatedAt: now.Add(time.Minute)},
+		{ID: "snap-3", JobID: "job-3", Host: "other-host", Plugin: "postgres", Size: 300, Checksum: "sha256:ccc", CreatedAt: now},
 	}
 	for _, snap := range snaps {
 		if err := s.RecordSnapshot(ctx, snap); err != nil {
@@ -158,6 +165,12 @@ func TestRecordAndListSnapshots(t *testing.T) {
 	}
 	if got[1].Checksum != "sha256:aaa" {
 		t.Errorf("Checksum = %q, want sha256:aaa", got[1].Checksum)
+	}
+	if got[1].JobID != "job-1" {
+		t.Errorf("JobID = %q, want job-1", got[1].JobID)
+	}
+	if !got[1].CreatedAt.Equal(now) {
+		t.Errorf("CreatedAt = %v, want %v", got[1].CreatedAt, now)
 	}
 }
 

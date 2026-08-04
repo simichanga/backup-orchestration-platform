@@ -36,6 +36,7 @@ type SnapshotID string
 // Snapshot is a stored artifact's metadata as tracked by a StorageProvider.
 type Snapshot struct {
 	ID        SnapshotID
+	JobID     string
 	Host      string
 	Plugin    string
 	Size      int64
