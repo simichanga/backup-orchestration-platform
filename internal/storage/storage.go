@@ -30,6 +30,11 @@ type StorageProvider interface {
 	// Snapshots lists all snapshots in the repository.
 	Snapshots(ctx context.Context) ([]core.Snapshot, error)
 
-	// ApplyRetention prunes snapshots that fall outside the given policy.
-	ApplyRetention(ctx context.Context, policy core.Policy) error
+	// ApplyRetention prunes snapshots for host that fall outside policy.
+	// host scopes the operation: verified against restic directly that an
+	// unscoped forget applies its keep-policy repository-wide, across every
+	// host and resource, not just the one the calling job is responsible
+	// for - which would silently apply the wrong retention policy to other
+	// hosts' backups.
+	ApplyRetention(ctx context.Context, host string, policy core.Policy) error
 }

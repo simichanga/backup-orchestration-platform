@@ -68,6 +68,7 @@ type stubStorage struct {
 
 	stored        map[core.SnapshotID]core.Artifact
 	retentionCall int
+	retentionHost string
 }
 
 func newStubStorage() *stubStorage {
@@ -87,8 +88,9 @@ func (s *stubStorage) Retrieve(context.Context, core.SnapshotID, core.Artifact) 
 func (s *stubStorage) Verify(context.Context, core.SnapshotID) error                  { return s.verifyErr }
 func (s *stubStorage) Delete(context.Context, core.SnapshotID) error                  { return nil }
 func (s *stubStorage) Snapshots(context.Context) ([]core.Snapshot, error)             { return nil, nil }
-func (s *stubStorage) ApplyRetention(context.Context, core.Policy) error {
+func (s *stubStorage) ApplyRetention(_ context.Context, host string, _ core.Policy) error {
 	s.retentionCall++
+	s.retentionHost = host
 	return s.retentionErr
 }
 
@@ -161,6 +163,9 @@ func TestRunJobSuccess(t *testing.T) {
 
 	if s.retentionCall != 1 {
 		t.Errorf("ApplyRetention called %d times, want 1", s.retentionCall)
+	}
+	if s.retentionHost != "prod-db" {
+		t.Errorf("ApplyRetention host = %q, want prod-db (must be scoped to the job's host)", s.retentionHost)
 	}
 
 	// Temp artifact must be cleaned up after a successful run.

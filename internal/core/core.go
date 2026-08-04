@@ -14,9 +14,16 @@ type Resource struct {
 
 // Artifact is the output of a plugin's Backup call: a dump file, tar stream,
 // or snapshot, plus the metadata the controller attaches as it moves through
-// the pipeline (checksum, encryption).
+// the pipeline (checksum, encryption). Host and Plugin are stamped on by the
+// controller after Backup returns - the plugin itself doesn't know BOP's
+// inventory concepts - and are load-bearing for StorageProvider
+// implementations that need to tag/scope stored artifacts by logical
+// identity (e.g. ResticProvider's --host/--tag, so retention can be scoped
+// correctly; see ApplyRetention).
 type Artifact struct {
 	ResourceID string
+	Host       string
+	Plugin     string
 	Path       string
 	Size       int64
 	Checksum   string

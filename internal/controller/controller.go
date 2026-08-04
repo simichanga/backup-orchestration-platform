@@ -156,7 +156,7 @@ func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventor
 
 	// Retention is a per-job step, not per-resource: run it once after all
 	// resources have been attempted, regardless of individual outcomes.
-	if err := c.Storage.ApplyRetention(ctx, job.Policy); err != nil {
+	if err := c.Storage.ApplyRetention(ctx, job.Host, job.Policy); err != nil {
 		errs = append(errs, fmt.Errorf("apply retention: %w", err))
 	}
 
@@ -173,6 +173,12 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 	if err != nil {
 		return fmt.Errorf("backup: %w", err)
 	}
+	// Stamped here, not by the plugin: the plugin doesn't know BOP's
+	// inventory concepts, but StorageProvider implementations (ResticProvider)
+	// need this identity to tag/scope what they store.
+	artifact.Host = job.Host
+	artifact.Plugin = job.Plugin
+
 	// Cleanup must run on every path (success, verify failure, store
 	// failure, ...) or a long-running controller slowly fills its temp
 	// disk. This is the only failure mode here that is silent rather than
