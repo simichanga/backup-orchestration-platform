@@ -30,6 +30,7 @@ storage:
   provider: restic
   restic:
     repository: `+dir+`/repo
+    password_file: `+dir+`/restic-password.txt
 metadata:
   driver: sqlite
   dsn: ":memory:"
@@ -74,6 +75,7 @@ storage:
   provider: restic
   restic:
     repository: `+dir+`/repo
+    password_file: `+dir+`/restic-password.txt
 metadata:
   driver: sqlite
   dsn: ":memory:"

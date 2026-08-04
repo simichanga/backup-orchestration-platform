@@ -33,6 +33,7 @@ storage:
   provider: restic
   restic:
     repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
 metadata:
   driver: postgres
   dsn: ":memory:"
@@ -87,6 +88,7 @@ storage:
   provider: restic
   restic:
     repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
 metadata:
   driver: sqlite
   dsn: ":memory:"

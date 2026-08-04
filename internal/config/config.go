@@ -37,8 +37,15 @@ type StorageConfig struct {
 }
 
 type ResticConfig struct {
-	Repository   string   `mapstructure:"repository"`
+	Repository string `mapstructure:"repository"`
+	// Exactly one of PasswordFile or PasswordEnv is required: the same
+	// file-or-env choice postgres's password_env already offers, so every
+	// secret BOP touches supports the same two operator-side delivery
+	// mechanisms (a systemd LoadCredential= path, or an EnvironmentFile=
+	// -injected variable) rather than restic being the odd one out with
+	// only a file option.
 	PasswordFile string   `mapstructure:"password_file"`
+	PasswordEnv  string   `mapstructure:"password_env"`
 	ExtraArgs    []string `mapstructure:"extra_args"`
 	Concurrency  int      `mapstructure:"concurrency"`
 }
@@ -169,8 +176,18 @@ func (c *Config) Validate() error {
 	if !validStorageProviders[c.Storage.Provider] {
 		return fmt.Errorf("storage.provider: unsupported value %q", c.Storage.Provider)
 	}
-	if c.Storage.Provider == "restic" && c.Storage.Restic.Repository == "" {
-		return fmt.Errorf("storage.restic.repository: required when storage.provider is restic")
+	if c.Storage.Provider == "restic" {
+		if c.Storage.Restic.Repository == "" {
+			return fmt.Errorf("storage.restic.repository: required when storage.provider is restic")
+		}
+		hasFile := c.Storage.Restic.PasswordFile != ""
+		hasEnv := c.Storage.Restic.PasswordEnv != ""
+		if hasFile && hasEnv {
+			return fmt.Errorf("storage.restic: password_file and password_env are mutually exclusive")
+		}
+		if !hasFile && !hasEnv {
+			return fmt.Errorf("storage.restic: one of password_file or password_env is required")
+		}
 	}
 	if c.Controller.Concurrency < 1 {
 		return fmt.Errorf("controller.concurrency: must be at least 1, got %d", c.Controller.Concurrency)

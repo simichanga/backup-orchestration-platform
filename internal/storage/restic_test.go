@@ -269,6 +269,36 @@ func findRestic(t *testing.T) string {
 	return ""
 }
 
+// TestExecRunnerPasswordEnvAuthenticatesAgainstRealRepo proves passwordEnv
+// isn't just plumbing: a real restic init/snapshots round-trip authenticates
+// correctly when the password is delivered via a named env var (as
+// config.yaml's storage.restic.password_env references) rather than a file.
+func TestExecRunnerPasswordEnvAuthenticatesAgainstRealRepo(t *testing.T) {
+	binary := findRestic(t)
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	repo := filepath.Join(dir, "repo")
+
+	t.Setenv("BOP_TEST_RESTIC_PASSWORD", "test-password-via-env")
+	runner := &execRunner{binary: binary, repository: repo, passwordEnv: "BOP_TEST_RESTIC_PASSWORD"}
+
+	if _, err := runner.Run(ctx, "init"); err != nil {
+		t.Fatalf("restic init: %v", err)
+	}
+	if _, err := runner.Run(ctx, "snapshots", "--json"); err != nil {
+		t.Fatalf("restic snapshots: %v", err)
+	}
+
+	// A wrong password must fail: proves the env var's value is what's
+	// actually authenticating, not some other fallback succeeding silently.
+	wrongRunner := &execRunner{binary: binary, repository: repo, passwordEnv: "BOP_TEST_RESTIC_WRONG_PASSWORD"}
+	t.Setenv("BOP_TEST_RESTIC_WRONG_PASSWORD", "not-the-right-password")
+	if _, err := wrongRunner.Run(ctx, "snapshots", "--json"); err == nil {
+		t.Fatalf("restic snapshots with wrong password: expected error, got nil")
+	}
+}
+
 // TestResticProviderIntegration exercises ResticProvider against a real,
 // throwaway restic repository. It is the test that actually proves the
 // --host/--tag/--group-by design: two resources on the same host must

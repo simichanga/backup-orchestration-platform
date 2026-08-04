@@ -80,7 +80,7 @@ func buildApp(configPath string) (*app, error) {
 	}
 	// storage.restic.concurrency is documented but not yet enforced by
 	// ResticProvider - noted here rather than silently ignored.
-	sp := storage.NewResticProvider("restic", cfg.Storage.Restic.Repository, cfg.Storage.Restic.PasswordFile, cfg.Storage.Restic.ExtraArgs)
+	sp := storage.NewResticProvider("restic", cfg.Storage.Restic.Repository, cfg.Storage.Restic.PasswordFile, cfg.Storage.Restic.PasswordEnv, cfg.Storage.Restic.ExtraArgs)
 
 	ctl := controller.New(inv, md, sp, cfg.Verification, cfg.Controller.TempDir, cfg.Controller.JobTimeout)
 	ctl.Logger = logger

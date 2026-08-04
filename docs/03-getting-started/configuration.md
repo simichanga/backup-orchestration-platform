@@ -17,7 +17,10 @@ storage:
   provider: restic          # Currently only "restic"
   restic:
     repository: /mnt/backups/prod
+    # Exactly one of password_file / password_env is required - see
+    # "Secrets Management" below for which to pick.
     password_file: /etc/bop/restic-password.txt
+    # password_env: RESTIC_REPO_PASSWORD
     extra_args: []           # Additional restic arguments (e.g., --verbose)
     concurrency: 2
 
@@ -115,31 +118,85 @@ servers:
 
 ## Secrets Management
 
-Never store passwords in inventory. Instead:
+Never store a plaintext secret value in `inventory.yaml` or `config.yaml`.
+Every secret BOP touches - the postgres plugin's database password, the
+restic repository password - is delivered one of two ways, your choice per
+secret:
 
-- Use password_env to reference an environment variable.
-- Store secrets in a .env file specified by secrets.env_file.
-- (Future) Integrate with SOPS/age to encrypt secrets directly in the
-inventory file.
+- **`*_file`**: a path to a file containing just the secret
+  (`storage.restic.password_file`). BOP reads the file's contents at the
+  moment it's needed.
+- **`*_env`**: the *name* of an environment variable holding the secret
+  (`storage.restic.password_env`, postgres's `config.password_env`). BOP
+  reads that variable from its own process environment at config/inventory
+  load time - which means **something has to put it there before BOP
+  starts**. BOP does not read a `.env` file or any secrets store itself.
 
-Example:
 ```yaml
 postgres:
   config:
     password_env: PG_BACKUP_PASSWORD
 ```
 
-Set PG_BACKUP_PASSWORD in secrets.env or via systemd environment.
+```yaml
+storage:
+  restic:
+    password_env: RESTIC_REPO_PASSWORD
+    # or: password_file: /etc/bop/restic-password.txt
+```
 
-## Restic Repository Password
+### Delivering the value: systemd (recommended)
 
-The Restic repository password must be stored separately. Provide its path in
-`storage.restic.password_file`. The file should contain only the password.
+Since BOP doesn't load secrets itself, use the process supervisor to inject
+them. On a systemd-managed host, two directives cover both mechanisms above:
+
+- **`EnvironmentFile=`** for `*_env` secrets - a `KEY=value` file systemd
+  reads and injects into BOP's environment before exec'ing it:
+  ```ini
+  # /etc/systemd/system/bop-controller.service
+  [Service]
+  EnvironmentFile=/etc/bop/secrets.env
+  ExecStart=/usr/local/bin/bop controller
+  ```
+  ```bash
+  # /etc/bop/secrets.env
+  PG_BACKUP_PASSWORD=...
+  RESTIC_REPO_PASSWORD=...
+  ```
+  Restrict this file's permissions the same way you would
+  `restic-password.txt` below (`chmod 600`, owned by the service user).
+
+- **`LoadCredential=`** for `*_file` secrets - systemd mounts the file into
+  a runtime-only tmpfs directory that doesn't persist across reboots and
+  isn't readable by other users, which is a real improvement over a
+  permanent plaintext file on disk:
+  ```ini
+  LoadCredential=restic-password:/etc/bop/restic-password.txt
+  ```
+  and point `storage.restic.password_file` at
+  `${CREDENTIALS_DIRECTORY}/restic-password` (systemd expands this into
+  BOP's environment as `$CREDENTIALS_DIRECTORY`).
+
+Without a process supervisor doing this, the simplest correct option is
+still a `*_file` pointing at a permission-locked-down plaintext file - the
+same trust model as an SSH private key file:
 
 ```bash
 echo "my_restic_repo_pass" > /etc/bop/restic-password.txt
 chmod 600 /etc/bop/restic-password.txt
 ```
+
+**`secrets.env_file`** is a config key documenting the *shape* operators
+should give this file - it is not currently read by BOP itself (there is no
+built-in `.env` loader). Use `EnvironmentFile=` above, or your own
+supervisor's equivalent, to actually get it into BOP's environment.
+
+**(Future)** SOPS/age integration to encrypt secret values directly inside a
+still-committable `inventory.yaml`/`config.yaml` is a real option if a
+later phase's deployment model (e.g. a fleet with inventory checked into
+git) needs it - deliberately not built for Phase 1's single-controller,
+local-file deployment, where it would add a key-bootstrapping problem
+without solving one that exists yet.
 
 ## Next
 

@@ -31,10 +31,26 @@ type commandRunner interface {
 
 // execRunner is the real commandRunner: it shells out to the restic binary.
 type execRunner struct {
-	binary       string
-	repository   string
+	binary     string
+	repository string
+	// Exactly one of passwordFile/passwordEnv is set (enforced by
+	// config.Config.Validate before this is ever constructed): passwordFile
+	// is forwarded to restic as RESTIC_PASSWORD_FILE directly; passwordEnv
+	// names an env var whose *value* (read from this process's own
+	// environment) is forwarded as RESTIC_PASSWORD - the same file-or-env
+	// choice postgres's password_env already offers.
 	passwordFile string
+	passwordEnv  string
 	extraArgs    []string
+}
+
+// env returns the environment for a restic subprocess, carrying the
+// repository password via whichever of passwordFile/passwordEnv is set.
+func (r *execRunner) env() []string {
+	if r.passwordEnv != "" {
+		return append(os.Environ(), "RESTIC_PASSWORD="+os.Getenv(r.passwordEnv))
+	}
+	return append(os.Environ(), "RESTIC_PASSWORD_FILE="+r.passwordFile)
 }
 
 func (r *execRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
@@ -42,7 +58,7 @@ func (r *execRunner) Run(ctx context.Context, args ...string) ([]byte, error) {
 	fullArgs = append(fullArgs, r.extraArgs...)
 
 	cmd := exec.CommandContext(ctx, r.binary, fullArgs...)
-	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD_FILE="+r.passwordFile)
+	cmd.Env = r.env()
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -59,7 +75,7 @@ func (r *execRunner) RunToWriter(ctx context.Context, w io.Writer, args ...strin
 	fullArgs = append(fullArgs, r.extraArgs...)
 
 	cmd := exec.CommandContext(ctx, r.binary, fullArgs...)
-	cmd.Env = append(os.Environ(), "RESTIC_PASSWORD_FILE="+r.passwordFile)
+	cmd.Env = r.env()
 
 	var stderr bytes.Buffer
 	cmd.Stdout = w
@@ -82,13 +98,16 @@ type ResticProvider struct {
 }
 
 // NewResticProvider constructs a ResticProvider that shells out to
-// binaryPath against repository, authenticating via passwordFile.
-// extraArgs are appended to every restic invocation (e.g. --verbose).
-func NewResticProvider(binaryPath, repository, passwordFile string, extraArgs []string) *ResticProvider {
+// binaryPath against repository, authenticating via passwordFile or
+// passwordEnv (exactly one should be non-empty; config.Config.Validate
+// enforces this upstream). extraArgs are appended to every restic
+// invocation (e.g. --verbose).
+func NewResticProvider(binaryPath, repository, passwordFile, passwordEnv string, extraArgs []string) *ResticProvider {
 	return &ResticProvider{run: &execRunner{
 		binary:       binaryPath,
 		repository:   repository,
 		passwordFile: passwordFile,
+		passwordEnv:  passwordEnv,
 		extraArgs:    extraArgs,
 	}}
 }

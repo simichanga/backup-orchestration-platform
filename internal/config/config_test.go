@@ -22,6 +22,7 @@ storage:
   provider: restic
   restic:
     repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
 `)
 
 	cfg, err := Load(path, nil)
@@ -52,6 +53,7 @@ storage:
   provider: restic
   restic:
     repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
 controller:
   concurrency: 4
 `)
@@ -65,6 +67,27 @@ controller:
 
 	if cfg.Controller.Concurrency != 9 {
 		t.Errorf("Controller.Concurrency = %d, want 9 (env override)", cfg.Controller.Concurrency)
+	}
+}
+
+func TestLoadResticPasswordEnv(t *testing.T) {
+	path := writeConfigFile(t, `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_env: RESTIC_REPO_PASSWORD
+`)
+
+	cfg, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Storage.Restic.PasswordEnv != "RESTIC_REPO_PASSWORD" {
+		t.Errorf("Storage.Restic.PasswordEnv = %q, want RESTIC_REPO_PASSWORD", cfg.Storage.Restic.PasswordEnv)
+	}
+	if cfg.Storage.Restic.PasswordFile != "" {
+		t.Errorf("Storage.Restic.PasswordFile = %q, want empty", cfg.Storage.Restic.PasswordFile)
 	}
 }
 
@@ -85,6 +108,26 @@ storage:
 			yaml: `
 storage:
   provider: restic
+`,
+		},
+		{
+			name: "missing restic password",
+			yaml: `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+`,
+		},
+		{
+			name: "restic password_file and password_env both set",
+			yaml: `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+    password_env: RESTIC_REPO_PASSWORD
 `,
 		},
 		{
