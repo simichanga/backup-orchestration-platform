@@ -91,6 +91,46 @@ storage:
 	}
 }
 
+func TestLoadAPIDisabledByDefaultNeedsNoTokenSource(t *testing.T) {
+	path := writeConfigFile(t, `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+`)
+	cfg, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.API.Enabled {
+		t.Error("API.Enabled = true, want false (default)")
+	}
+}
+
+func TestLoadAPIEnabledWithTokenEnv(t *testing.T) {
+	path := writeConfigFile(t, `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+api:
+  enabled: true
+  token_env: BOP_API_TOKEN
+`)
+	cfg, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.API.Enabled {
+		t.Error("API.Enabled = false, want true")
+	}
+	if cfg.API.TokenEnv != "BOP_API_TOKEN" {
+		t.Errorf("API.TokenEnv = %q, want BOP_API_TOKEN", cfg.API.TokenEnv)
+	}
+}
+
 func TestLoadValidationErrors(t *testing.T) {
 	tests := []struct {
 		name string
@@ -150,6 +190,32 @@ storage:
     repository: /mnt/backups/prod
 logging:
   level: verbose
+`,
+		},
+		{
+			name: "api enabled with no token source",
+			yaml: `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+api:
+  enabled: true
+`,
+		},
+		{
+			name: "api tokens_file and token_env both set",
+			yaml: `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+api:
+  enabled: true
+  tokens_file: /etc/bop/api-tokens.txt
+  token_env: BOP_API_TOKEN
 `,
 		},
 	}

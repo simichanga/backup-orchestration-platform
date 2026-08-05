@@ -72,9 +72,19 @@ type MetadataConfig struct {
 	DSN    string `mapstructure:"dsn"`
 }
 
+// APIConfig governs the optional read-only HTTP API "bop controller" can
+// serve alongside metrics, gated by Enabled (off by default - most Phase 1
+// deployments don't need it, the CLI already covers Phase 1's needs). v1 is
+// REST-only; the docs/02-architecture.md gRPC+REST-gateway design is
+// deferred until something actually needs gRPC, so there is no grpc_addr
+// here. Every request must carry a bearer token from TokensFile/TokenEnv -
+// there is no anonymous access, matching SSH's no-insecure-fallback
+// posture elsewhere in BOP.
 type APIConfig struct {
-	GRPCAddr string `mapstructure:"grpc_addr"`
-	RESTAddr string `mapstructure:"rest_addr"`
+	Enabled    bool   `mapstructure:"enabled"`
+	Addr       string `mapstructure:"addr"`
+	TokensFile string `mapstructure:"tokens_file"`
+	TokenEnv   string `mapstructure:"token_env"`
 }
 
 type MetricsConfig struct {
@@ -118,8 +128,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("metadata.driver", "sqlite")
 	v.SetDefault("metadata.dsn", "/var/lib/bop/metadata.db")
 
-	v.SetDefault("api.grpc_addr", ":9091")
-	v.SetDefault("api.rest_addr", ":9092")
+	v.SetDefault("api.enabled", false)
+	v.SetDefault("api.addr", ":9091")
 
 	v.SetDefault("metrics.port", 9090)
 	v.SetDefault("metrics.path", "/metrics")
@@ -187,6 +197,16 @@ func (c *Config) Validate() error {
 		}
 		if !hasFile && !hasEnv {
 			return fmt.Errorf("storage.restic: one of password_file or password_env is required")
+		}
+	}
+	if c.API.Enabled {
+		hasFile := c.API.TokensFile != ""
+		hasEnv := c.API.TokenEnv != ""
+		if hasFile && hasEnv {
+			return fmt.Errorf("api: tokens_file and token_env are mutually exclusive")
+		}
+		if !hasFile && !hasEnv {
+			return fmt.Errorf("api: one of tokens_file or token_env is required when api.enabled is true")
 		}
 	}
 	if c.Controller.Concurrency < 1 {

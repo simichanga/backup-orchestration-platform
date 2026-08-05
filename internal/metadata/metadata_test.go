@@ -175,6 +175,46 @@ func TestListJobsByStatusEmpty(t *testing.T) {
 	}
 }
 
+func TestListJobs(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	jobs := []core.Job{
+		{ID: "queued-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: now},
+		{ID: "in-progress-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusInProgress, QueuedAt: now.Add(time.Minute)},
+		{ID: "failed-1", Host: "other-host", Plugin: "filesystem", Status: core.JobStatusFailed, QueuedAt: now.Add(2 * time.Minute)},
+	}
+	for _, j := range jobs {
+		if err := s.CreateJob(ctx, j); err != nil {
+			t.Fatalf("CreateJob(%s): %v", j.ID, err)
+		}
+	}
+
+	got, err := s.ListJobs(ctx)
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("ListJobs returned %d jobs, want 3", len(got))
+	}
+	// Most recently queued first, unlike ListJobsByStatus's oldest-first order.
+	if got[0].ID != "failed-1" || got[1].ID != "in-progress-1" || got[2].ID != "queued-1" {
+		t.Errorf("ListJobs order = [%s, %s, %s], want [failed-1, in-progress-1, queued-1]", got[0].ID, got[1].ID, got[2].ID)
+	}
+}
+
+func TestListJobsEmpty(t *testing.T) {
+	s := openTestStore(t)
+	got, err := s.ListJobs(context.Background())
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("ListJobs returned %d jobs, want 0", len(got))
+	}
+}
+
 func TestRecordAndListSnapshots(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

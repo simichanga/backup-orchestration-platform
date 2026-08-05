@@ -11,13 +11,15 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"bop/internal/api"
 	"bop/internal/metrics"
 	"bop/internal/scheduler"
 )
 
 // newControllerCmd runs the controller daemon: loads inventory, registers
-// plugins, starts the metrics HTTP server and scheduler, and runs a single
-// serial consumer that drains the queue. Shuts down cleanly on
+// plugins, starts the metrics HTTP server, the optional read-only API
+// server (api.enabled), and the scheduler, and runs a single serial
+// consumer that drains the queue. Shuts down cleanly on
 // SIGINT/SIGTERM - a job in progress at shutdown ends up failed, not stuck
 // in_progress (see controller.RunJob's recordCtx handling), consistent
 // with the crash recovery model rather than needing a separate code path
@@ -62,6 +64,30 @@ func newControllerCmd(configPath *string) *cobra.Command {
 				}
 			}()
 
+			// apiErrCh stays nil (and so never fires) unless api.enabled -
+			// a nil channel blocks forever in a select, which is exactly
+			// "this case doesn't exist" for an optional server.
+			var apiErrCh <-chan error
+			if a.Config.API.Enabled {
+				tokens, err := api.LoadTokens(a.Config.API)
+				if err != nil {
+					return fmt.Errorf("load api tokens: %w", err)
+				}
+				apiServer, err := api.NewServer(a.Config.API.Addr, tokens, a.Inventory, a.Metadata)
+				if err != nil {
+					return fmt.Errorf("start api server: %w", err)
+				}
+				apiErrCh = apiServer.Start()
+				defer func() {
+					shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					defer cancel()
+					if err := apiServer.Shutdown(shutdownCtx); err != nil {
+						a.Logger.Warn("api server shutdown", "error", err)
+					}
+				}()
+				a.Logger.Info("bop api server ready", "api_addr", apiServer.Addr())
+			}
+
 			sched, err := scheduler.New(a.Inventory, a.Metadata, a.Queue, a.Controller.Events, a.Config.Scheduler.CronLocation, a.Logger)
 			if err != nil {
 				return fmt.Errorf("build scheduler: %w", err)
@@ -94,6 +120,8 @@ func newControllerCmd(configPath *string) *cobra.Command {
 				a.Logger.Info("shutting down")
 			case err := <-metricsErrCh:
 				a.Logger.Error("metrics server exited unexpectedly", "error", err)
+			case err := <-apiErrCh:
+				a.Logger.Error("api server exited unexpectedly", "error", err)
 			}
 			cancelRun()
 			wg.Wait()

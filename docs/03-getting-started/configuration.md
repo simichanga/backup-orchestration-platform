@@ -47,10 +47,15 @@ metadata:
   driver: sqlite             # "sqlite" or "postgres"
   dsn: /var/lib/bop/metadata.db
 
-# API server (gRPC + REST)
+# Optional read-only HTTP API (off by default - the CLI covers Phase 1's
+# actual needs). v1 is REST-only, no mutating endpoints (no trigger/restore
+# yet) - see docs/02-architecture.md#api. Every request needs a bearer
+# token; exactly one of tokens_file/token_env is required when enabled.
 api:
-  grpc_addr: ":9091"
-  rest_addr: ":9092"
+  enabled: false
+  addr: ":9091"
+  tokens_file: /etc/bop/api-tokens.txt
+  # token_env: BOP_API_TOKEN
 
 # Observability
 metrics:
@@ -123,17 +128,21 @@ servers:
 
 Never store a plaintext secret value in `inventory.yaml` or `config.yaml`.
 Every secret BOP touches - the postgres plugin's database password, the
-restic repository password - is delivered one of two ways, your choice per
-secret:
+restic repository password, the API's bearer tokens - is delivered one of
+two ways, your choice per secret:
 
 - **`*_file`**: a path to a file containing just the secret
-  (`storage.restic.password_file`). BOP reads the file's contents at the
-  moment it's needed.
+  (`storage.restic.password_file`, `api.tokens_file`). BOP reads the file's
+  contents at the moment it's needed. `api.tokens_file` is the one
+  exception to "just the secret": it supports one token per line (blank
+  lines and `#` comments ignored), since an API can reasonably have more
+  than one valid caller.
 - **`*_env`**: the *name* of an environment variable holding the secret
-  (`storage.restic.password_env`, postgres's `config.password_env`). BOP
-  reads that variable from its own process environment at config/inventory
-  load time - which means **something has to put it there before BOP
-  starts**. BOP does not read a `.env` file or any secrets store itself.
+  (`storage.restic.password_env`, postgres's `config.password_env`,
+  `api.token_env`). BOP reads that variable from its own process
+  environment at config/inventory load time (or, for `api.token_env`,
+  controller startup) - which means **something has to put it there before
+  BOP starts**. BOP does not read a `.env` file or any secrets store itself.
 
 ```yaml
 postgres:
@@ -146,6 +155,13 @@ storage:
   restic:
     password_env: RESTIC_REPO_PASSWORD
     # or: password_file: /etc/bop/restic-password.txt
+```
+
+```yaml
+api:
+  enabled: true
+  tokens_file: /etc/bop/api-tokens.txt
+  # or: token_env: BOP_API_TOKEN (exactly one token, not a list)
 ```
 
 ### Delivering the value: systemd (recommended)

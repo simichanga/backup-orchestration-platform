@@ -96,6 +96,36 @@ func (s *Store) ListJobsByStatus(ctx context.Context, status core.JobStatus) ([]
 	return jobs, nil
 }
 
+// ListJobs returns every job regardless of status, most recently queued
+// first. Unlike ListJobsByStatus (built for startup reconciliation, ordered
+// oldest-first to process in queue order), this is for read access to full
+// job history - the API's GET /v1/jobs.
+func (s *Store) ListJobs(ctx context.Context) ([]core.Job, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, host, plugin, status, retention_daily, retention_weekly, retention_monthly, retention_yearly, queued_at
+		FROM jobs ORDER BY queued_at DESC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("metadata: list jobs: %w", err)
+	}
+	defer rows.Close()
+
+	var jobs []core.Job
+	for rows.Next() {
+		var job core.Job
+		if err := rows.Scan(&job.ID, &job.Host, &job.Plugin, &job.Status,
+			&job.Policy.Daily, &job.Policy.Weekly, &job.Policy.Monthly, &job.Policy.Yearly,
+			&job.QueuedAt); err != nil {
+			return nil, fmt.Errorf("metadata: list jobs: %w", err)
+		}
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("metadata: list jobs: %w", err)
+	}
+	return jobs, nil
+}
+
 // FailOrphanedJobs marks every job still in_progress as failed. Call this
 // once on controller startup: per the documented Phase 1 crash-recovery
 // default, in-flight jobs from a previous run are not resumed. Returns the

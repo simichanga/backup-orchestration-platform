@@ -148,14 +148,29 @@ scheduler-retry behavior has proven insufficient in practice.
 
 ### API
 
-The API exposes the controller and metadata. It uses **gRPC** with a REST
-gateway for easy tool integration. Endpoints allow:
+The API exposes the controller and metadata. The original design called for
+**gRPC** with a REST gateway; endpoints were meant to allow:
 
 - Listing inventory and statuses
 - Triggering ad‑hoc backups
 - Starting restores
 - Querying snapshot history
 - Viewing events and metrics
+
+**Phase 1 implementation notes** (v1 scope, decided 2026-08-05): REST only -
+gRPC is deferred until something actually needs it, not built speculatively
+alongside REST. Read-only for v1 - triggering backups/restores stays
+CLI-only until the read surface (and its auth) has proven itself; adding
+mutating endpoints is a later, separate decision. Auth is a static bearer
+token (`api.tokens_file`/`api.token_env`, same file-or-env delivery every
+other BOP secret uses) - no anonymous access, no OIDC/mTLS yet. "Viewing
+events" is not implemented: there is no durable, queryable event store
+today (only in-process log/metrics subscribers, see the Event System
+section below) - building one is a separate scoping decision, not a
+side effect of adding a read API on top of data that already existed.
+`internal/api` implements this; see
+[Configuration Reference](03-getting-started/configuration.md) for the
+`api.*` config block.
 
 ### Event System
 

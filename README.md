@@ -16,9 +16,13 @@ SQLite metadata, and an in-process cron scheduler. Every code path
 just unit-tested - see [docs/04-writing-plugins.md](docs/04-writing-plugins.md#testing-expectations)
 for what that verification covered.
 
-There is no multi-controller/HA story, no API server, and no out-of-process
-plugin loading yet - see [docs/02-architecture.md](docs/02-architecture.md)
-and [docs/05-operations.md](docs/05-operations.md#known-operational-behavior-read-before-youre-paged)
+There's an optional read-only HTTP API (`api.enabled`, off by default,
+bearer-token auth) covering hosts/jobs/snapshots - see
+[docs/05-operations.md](docs/05-operations.md#read-only-api). There is no
+multi-controller/HA story, no mutating API endpoints (trigger/restore stay
+CLI-only), and no out-of-process plugin loading yet - see
+[docs/02-architecture.md](docs/02-architecture.md) and
+[docs/05-operations.md](docs/05-operations.md#known-operational-behavior-read-before-youre-paged)
 for the current honest limitations.
 
 ## Getting Started

@@ -88,6 +88,43 @@ Logs are structured (`logging.format: json` by default) and go to stdout -
 `journalctl -u bop-controller` picks them up under the systemd unit above
 with no extra configuration.
 
+## Read-Only API
+
+`bop controller` can optionally serve a read-only HTTP API alongside
+metrics - off by default, since the CLI already covers Phase 1's actual
+needs. Enable it with `api.enabled: true` and one of `api.tokens_file`/
+`api.token_env` (same `*_file`/`*_env` delivery as every other secret - see
+[Configuration Reference](03-getting-started/configuration.md#secrets-management)).
+Every request needs `Authorization: Bearer <token>`; there's no anonymous
+access.
+
+```yaml
+api:
+  enabled: true
+  addr: "127.0.0.1:9091"
+  tokens_file: /etc/bop/api-tokens.txt
+```
+
+Endpoints (all read-only - v1 has no trigger/restore endpoints, those stay
+CLI-only for now):
+
+| Method | Path                    | Notes                                  |
+|--------|--------------------------|-----------------------------------------|
+| GET    | `/v1/hosts`              | Inventory hosts and their plugins       |
+| GET    | `/v1/jobs`               | All jobs, optional `?status=` filter    |
+| GET    | `/v1/jobs/{id}`          | A single job, 404 if unknown            |
+| GET    | `/v1/snapshots?host=...` | Snapshot history for a host (required)  |
+
+**BOP does not terminate TLS on this port.** It's plain HTTP - the bearer
+token protects against unauthorized *use*, not against network
+eavesdropping. Bind `api.addr` to loopback (as above) and put a reverse
+proxy in front if you need it reachable beyond the controller host, the
+same posture you'd take with `metrics.port`.
+
+If you add `api.tokens_file`/credential wiring to the systemd unit above,
+it goes through the same `EnvironmentFile=`/`LoadCredential=` mechanisms
+already there for postgres/restic secrets - nothing API-specific about it.
+
 ## Known Operational Behavior (Read Before You're Paged)
 
 - **Crash recovery is "fail forward," not "resume."** A job still
