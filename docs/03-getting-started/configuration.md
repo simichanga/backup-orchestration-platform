@@ -46,6 +46,11 @@ ssh:
 metadata:
   driver: sqlite             # "sqlite" or "postgres"
   dsn: /var/lib/bop/metadata.db
+  # How long persisted events (see docs/02-architecture.md#event-system)
+  # are kept before a periodic background pruner deletes them. Unlike
+  # jobs/snapshots, events fire many times per job, so this table is
+  # bounded by age rather than left to grow unbounded.
+  event_retention: 720h      # 30 days
 
 # Optional read-only HTTP API (off by default - the CLI covers Phase 1's
 # actual needs). v1 is REST-only, no mutating endpoints (no trigger/restore

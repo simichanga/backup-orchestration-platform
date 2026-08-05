@@ -45,6 +45,9 @@ storage:
 	if cfg.SSH.KnownHostsFile != "/etc/bop/known_hosts" {
 		t.Errorf("SSH.KnownHostsFile = %q, want /etc/bop/known_hosts", cfg.SSH.KnownHostsFile)
 	}
+	if cfg.Metadata.EventRetention != 720*time.Hour {
+		t.Errorf("Metadata.EventRetention = %v, want 720h", cfg.Metadata.EventRetention)
+	}
 }
 
 func TestLoadEnvOverride(t *testing.T) {
@@ -216,6 +219,18 @@ api:
   enabled: true
   tokens_file: /etc/bop/api-tokens.txt
   token_env: BOP_API_TOKEN
+`,
+		},
+		{
+			name: "zero event retention",
+			yaml: `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+metadata:
+  event_retention: 0s
 `,
 		},
 	}

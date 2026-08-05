@@ -45,6 +45,22 @@ CREATE TABLE IF NOT EXISTS snapshots (
 	checksum TEXT NOT NULL,
 	created_at DATETIME NOT NULL
 );
+
+-- Unlike jobs/snapshots (one row per job), events fire many times per job
+-- (discovery started, artifact created, upload started/completed, ...), so
+-- this table is pruned by age - see PruneEventsOlderThan and
+-- metadata.event_retention - rather than left to grow unbounded.
+CREATE TABLE IF NOT EXISTS events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	type TEXT NOT NULL,
+	job_id TEXT NOT NULL,
+	host TEXT NOT NULL,
+	plugin TEXT NOT NULL,
+	resource TEXT NOT NULL,
+	fields TEXT NOT NULL,
+	timestamp DATETIME NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
 `
 
 // Open opens (creating if necessary) the SQLite database at dsn and applies

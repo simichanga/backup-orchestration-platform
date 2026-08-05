@@ -164,6 +164,16 @@ already there for postgres/restic secrets - nothing API-specific about it.
   metadata database, one in-memory job queue. Losing the controller host
   loses in-flight (not yet-persisted) scheduling state until it comes back;
   already-stored backups in the restic repository are unaffected.
+- **Every event is persisted, then pruned by age.** `metadata.db` now has
+  an `events` table (discovery started, artifact created, upload
+  completed, ...) alongside `jobs`/`snapshots`, kept for
+  `metadata.event_retention` (default 30 days) and cleaned up by a
+  background pruner - once immediately on `bop controller` startup, then
+  hourly. `INFO pruned old events count=N` in the logs is this working as
+  intended, not an error. There's no `bop events list` or `GET /v1/events`
+  yet to actually read this table - it exists so a future one has
+  something to query, see
+  [Architecture](02-architecture.md#event-system).
 
 ## Restoring in an Emergency
 

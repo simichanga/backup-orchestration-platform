@@ -19,7 +19,8 @@ import (
 // newControllerCmd runs the controller daemon: loads inventory, registers
 // plugins, starts the metrics HTTP server, the optional read-only API
 // server (api.enabled), and the scheduler, and runs a single serial
-// consumer that drains the queue. Shuts down cleanly on
+// consumer that drains the queue alongside a periodic event-table pruner.
+// Shuts down cleanly on
 // SIGINT/SIGTERM - a job in progress at shutdown ends up failed, not stuck
 // in_progress (see controller.RunJob's recordCtx handling), consistent
 // with the crash recovery model rather than needing a separate code path
@@ -108,6 +109,12 @@ func newControllerCmd(configPath *string) *cobra.Command {
 			go func() {
 				defer wg.Done()
 				a.runConsumer(runCtx)
+			}()
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				a.runEventPruner(runCtx)
 			}()
 
 			a.Logger.Info("bop controller ready",

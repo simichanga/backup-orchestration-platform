@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -92,8 +93,12 @@ func buildApp(configPath string) (*app, error) {
 	reg := prometheus.NewRegistry()
 	metricsPub := metrics.New(reg)
 	ctl.Events = &events.Multi{
-		Subscribers: []events.Publisher{&events.LogPublisher{Logger: logger}, metricsPub},
-		Logger:      logger,
+		Subscribers: []events.Publisher{
+			&events.LogPublisher{Logger: logger},
+			metricsPub,
+			&metadata.EventPublisher{Store: md, Logger: logger},
+		},
+		Logger: logger,
 	}
 
 	ctl.RegisterPlugin("postgres", postgres.NewFactory(cfg.SSH.KnownHostsFile))
@@ -143,6 +148,53 @@ func (a *app) runConsumer(ctx context.Context) {
 		}
 		if err := a.Controller.RunJob(ctx, job); err != nil {
 			a.Logger.Error("job failed", "job_id", job.ID, "host", job.Host, "plugin", job.Plugin, "error", err)
+		}
+	}
+}
+
+// eventPruneInterval governs how often runEventPruner re-checks, not how
+// long events are kept (that's metadata.event_retention) - not
+// configurable for v1, since a fixed hourly cadence is cheap (an indexed
+// DELETE that usually finds nothing to do) and there's no operational
+// reason yet to tune it independently of the retention window itself.
+const eventPruneInterval = time.Hour
+
+// runEventPruner deletes events older than cfg.Metadata.EventRetention,
+// once immediately (so a controller that was down doesn't wait a full
+// interval to catch up) and then every eventPruneInterval until ctx is
+// cancelled. Without this, the events table - written to many times per
+// job, unlike jobs/snapshots - would grow unbounded across a long-running
+// controller's uptime.
+func (a *app) runEventPruner(ctx context.Context) {
+	prune := func() {
+		// A fresh, short-lived context, deliberately not ctx: a prune that
+		// has already started should be allowed to finish even if the
+		// controller begins shutting down (ctx cancelled) at the same
+		// moment - the same reasoning as controller.RunJob's recordCtx.
+		pruneCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		cutoff := time.Now().UTC().Add(-a.Config.Metadata.EventRetention)
+		n, err := a.Metadata.PruneEventsOlderThan(pruneCtx, cutoff)
+		if err != nil {
+			a.Logger.Error("event pruning failed", "error", err)
+			return
+		}
+		if n > 0 {
+			a.Logger.Info("pruned old events", "count", n, "cutoff", cutoff)
+		}
+	}
+
+	prune()
+
+	ticker := time.NewTicker(eventPruneInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			prune()
 		}
 	}
 }

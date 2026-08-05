@@ -70,6 +70,12 @@ type SSHConfig struct {
 type MetadataConfig struct {
 	Driver string `mapstructure:"driver"`
 	DSN    string `mapstructure:"dsn"`
+	// EventRetention bounds the events table (see internal/metadata's
+	// EventPublisher): events fire many times per job, unlike jobs/
+	// snapshots (one row per job, never pruned), so leaving this table
+	// unbounded would grow it far faster than the rest of the metadata
+	// store.
+	EventRetention time.Duration `mapstructure:"event_retention"`
 }
 
 // APIConfig governs the optional read-only HTTP API "bop controller" can
@@ -127,6 +133,7 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("metadata.driver", "sqlite")
 	v.SetDefault("metadata.dsn", "/var/lib/bop/metadata.db")
+	v.SetDefault("metadata.event_retention", "720h") // 30 days
 
 	v.SetDefault("api.enabled", false)
 	v.SetDefault("api.addr", ":9091")
@@ -214,6 +221,9 @@ func (c *Config) Validate() error {
 	}
 	if !validMetadataDrivers[c.Metadata.Driver] {
 		return fmt.Errorf("metadata.driver: unsupported value %q", c.Metadata.Driver)
+	}
+	if c.Metadata.EventRetention <= 0 {
+		return fmt.Errorf("metadata.event_retention: must be positive, got %v", c.Metadata.EventRetention)
 	}
 	if !validLogLevels[c.Logging.Level] {
 		return fmt.Errorf("logging.level: unsupported value %q", c.Logging.Level)

@@ -164,11 +164,11 @@ CLI-only until the read surface (and its auth) has proven itself; adding
 mutating endpoints is a later, separate decision. Auth is a static bearer
 token (`api.tokens_file`/`api.token_env`, same file-or-env delivery every
 other BOP secret uses) - no anonymous access, no OIDC/mTLS yet. "Viewing
-events" is not implemented: there is no durable, queryable event store
-today (only in-process log/metrics subscribers, see the Event System
-section below) - building one is a separate scoping decision, not a
-side effect of adding a read API on top of data that already existed.
-`internal/api` implements this; see
+events" is not implemented as an endpoint yet - `GET /v1/events` is a
+separate, not yet scoped, follow-up - but the durable event store it would
+need now exists (see the Event System section below); the earlier gap was
+"there's nothing to query," not "there's no endpoint." `internal/api`
+implements this; see
 [Configuration Reference](03-getting-started/configuration.md) for the
 `api.*` config block.
 
@@ -197,6 +197,19 @@ and `bop_restore_verifications_completed_total{host,plugin}` on
 `bop controller` for as long as it runs - one-shot commands (`bop backup`,
 etc.) still record into a registry, but nothing serves it since the
 process exits immediately after.
+
+**Durable event storage** (added 2026-08-05): `metadata.EventPublisher` is
+a third `events.Publisher` subscriber in the same `events.Multi` fan-out,
+persisting every event to an `events` table via `metadata.Store` - the
+same zero-extra-instrumentation property applies. Unlike `jobs`/
+`snapshots` (one row per job, never pruned), events fire many times per
+job, so the table is bounded by age: `metadata.event_retention` (default
+30 days) plus a periodic pruner (`internal/cli`'s `runEventPruner`, hourly,
+plus once immediately on `bop controller` startup so a controller that was
+down doesn't wait a full interval to catch up). `metadata.Store.ListEvents`
+exists for this - most-recent-first, no filtering yet - but nothing reads
+it over the network today; that's `GET /v1/events`, a separate follow-up
+(see the API section above).
 
 ## Backup Job Lifecycle
 

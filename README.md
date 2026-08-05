@@ -18,9 +18,13 @@ for what that verification covered.
 
 There's an optional read-only HTTP API (`api.enabled`, off by default,
 bearer-token auth) covering hosts/jobs/snapshots - see
-[docs/05-operations.md](docs/05-operations.md#read-only-api). There is no
-multi-controller/HA story, no mutating API endpoints (trigger/restore stay
-CLI-only), and no out-of-process plugin loading yet - see
+[docs/05-operations.md](docs/05-operations.md#read-only-api). Every
+controller event is now durably persisted and age-pruned (`metadata.db`'s
+`events` table, `metadata.event_retention`) - see
+[docs/02-architecture.md](docs/02-architecture.md#event-system) - though
+nothing exposes it yet (`GET /v1/events` is a future follow-up). There is
+no multi-controller/HA story, no mutating API endpoints (trigger/restore
+stay CLI-only), and no out-of-process plugin loading yet - see
 [docs/02-architecture.md](docs/02-architecture.md) and
 [docs/05-operations.md](docs/05-operations.md#known-operational-behavior-read-before-youre-paged)
 for the current honest limitations.
