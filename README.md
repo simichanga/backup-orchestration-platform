@@ -1,5 +1,7 @@
 # BOP - Backup Orchestration Platform
 
+[![CI](https://github.com/simichanga/backup-orchestration-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/simichanga/backup-orchestration-platform/actions/workflows/ci.yml)
+
 BOP orchestrates backups across a fleet of hosts: scheduling, inventory,
 verification, and retention. It doesn't implement its own storage engine -
 backup data is stored via [restic](https://restic.net/), which BOP shells
