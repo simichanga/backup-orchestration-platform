@@ -200,7 +200,7 @@ nothing API-specific about it.
   background pruner - once immediately on `bop controller` startup, then
   hourly. `INFO pruned old events count=N` in the logs is this working as
   intended, not an error. Readable via `GET /v1/events` (see
-  [Read-Only API](#read-only-api) above) - there's still no `bop events
+  [HTTP API](#http-api) above) - there's still no `bop events
   list` CLI command, see
   [Architecture](02-architecture.md#event-system).
 
