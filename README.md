@@ -48,6 +48,10 @@ go vet ./...
 gofmt -l .
 ```
 
+[.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same build/vet/fmt
+checks on every push, plus `go test -race ./...` - the race detector needs a C
+toolchain, so it only runs in CI, not on a plain Windows dev machine.
+
 ## Architecture
 
 Hexagonal / ports-and-adapters: `BackupPlugin` (a data source), `StorageProvider`
