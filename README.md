@@ -38,7 +38,7 @@ at [docs/04-writing-plugins.md](docs/04-writing-plugins.md).
 
 ```bash
 go build -o bin/bop ./cmd/bop
-# or, if you have make:
+# or, to also embed the version (git describe) into `bop version`:
 make build
 ```
 
