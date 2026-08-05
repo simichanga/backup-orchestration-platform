@@ -31,19 +31,47 @@ func (s *Store) RecordEvent(ctx context.Context, e events.Event) error {
 	return nil
 }
 
-// ListEvents returns every persisted event, most recent first. Exists as
-// part of the storage layer's read/write symmetry (every other table here
-// has both a record and a list method) and for verification - there is no
-// API endpoint reading this yet; GET /v1/events is a separate, not yet
-// scoped, follow-up. No LIMIT/pagination: harmless while nothing calls
-// this, but whoever wires up GET /v1/events must add one first - this
-// will otherwise load the entire (age-pruned, but still potentially
-// large) events table into memory on every call.
+// EventFilter narrows ListEventsPage's results. A zero-value JobID/Host
+// means "no filter" on that field. Limit <= 0 means no limit, using
+// SQLite's own `LIMIT -1` convention rather than a magic sentinel BOP
+// invents itself.
+type EventFilter struct {
+	JobID string
+	Host  string
+	Limit int
+}
+
+// ListEvents returns every persisted event, most recent first - a
+// convenience wrapper around ListEventsPage with no filter and no limit.
+// Part of the storage layer's read/write symmetry (every other table here
+// has both a record and a list method).
 func (s *Store) ListEvents(ctx context.Context) ([]events.Event, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT type, job_id, host, plugin, resource, fields, timestamp
-		FROM events ORDER BY timestamp DESC`,
-	)
+	return s.ListEventsPage(ctx, EventFilter{})
+}
+
+// ListEventsPage returns events matching filter, most recent first. Backs
+// GET /v1/events (internal/api) - the API layer is responsible for
+// choosing a sane default/max Limit; this method applies whatever it's
+// given as-is.
+func (s *Store) ListEventsPage(ctx context.Context, filter EventFilter) ([]events.Event, error) {
+	query := `SELECT type, job_id, host, plugin, resource, fields, timestamp FROM events WHERE 1=1`
+	var args []interface{}
+	if filter.JobID != "" {
+		query += " AND job_id = ?"
+		args = append(args, filter.JobID)
+	}
+	if filter.Host != "" {
+		query += " AND host = ?"
+		args = append(args, filter.Host)
+	}
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = -1
+	}
+	query += " ORDER BY timestamp DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("metadata: list events: %w", err)
 	}

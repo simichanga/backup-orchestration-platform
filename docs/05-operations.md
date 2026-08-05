@@ -108,12 +108,13 @@ api:
 Endpoints (all read-only - v1 has no trigger/restore endpoints, those stay
 CLI-only for now):
 
-| Method | Path                    | Notes                                  |
-|--------|--------------------------|-----------------------------------------|
-| GET    | `/v1/hosts`              | Inventory hosts and their plugins       |
-| GET    | `/v1/jobs`               | All jobs, optional `?status=` filter    |
-| GET    | `/v1/jobs/{id}`          | A single job, 404 if unknown            |
-| GET    | `/v1/snapshots?host=...` | Snapshot history for a host (required)  |
+| Method | Path                    | Notes                                                    |
+|--------|--------------------------|-----------------------------------------------------------|
+| GET    | `/v1/hosts`              | Inventory hosts and their plugins                          |
+| GET    | `/v1/jobs`               | All jobs, optional `?status=` filter                        |
+| GET    | `/v1/jobs/{id}`          | A single job, 404 if unknown                               |
+| GET    | `/v1/snapshots?host=...` | Snapshot history for a host (required)                     |
+| GET    | `/v1/events`             | Recent events, optional `?job_id=`/`?host=`, `?limit=` (default 100, max 1000) |
 
 **BOP does not terminate TLS on this port.** It's plain HTTP - the bearer
 token protects against unauthorized *use*, not against network
@@ -170,9 +171,9 @@ already there for postgres/restic secrets - nothing API-specific about it.
   `metadata.event_retention` (default 30 days) and cleaned up by a
   background pruner - once immediately on `bop controller` startup, then
   hourly. `INFO pruned old events count=N` in the logs is this working as
-  intended, not an error. There's no `bop events list` or `GET /v1/events`
-  yet to actually read this table - it exists so a future one has
-  something to query, see
+  intended, not an error. Readable via `GET /v1/events` (see
+  [Read-Only API](#read-only-api) above) - there's still no `bop events
+  list` CLI command, see
   [Architecture](02-architecture.md#event-system).
 
 ## Restoring in an Emergency

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"sort"
+	"strconv"
 	"time"
 
 	"bop/internal/core"
+	"bop/internal/events"
 	"bop/internal/inventory"
 	"bop/internal/metadata"
 )
@@ -184,6 +186,74 @@ func listSnapshotsHandler(md *metadata.Store) http.HandlerFunc {
 		summaries := make([]snapshotSummary, len(snaps))
 		for i, s := range snaps {
 			summaries[i] = newSnapshotSummary(s)
+		}
+		writeJSON(w, http.StatusOK, summaries)
+	}
+}
+
+// eventSummary is the API's wire representation of events.Event, same
+// reasoning as jobSummary/snapshotSummary: events.Event has no json tags
+// of its own, so serializing it directly would reintroduce PascalCase
+// next to every other endpoint's camelCase.
+type eventSummary struct {
+	Type      string            `json:"type"`
+	JobID     string            `json:"jobId"`
+	Host      string            `json:"host"`
+	Plugin    string            `json:"plugin"`
+	Resource  string            `json:"resource"`
+	Fields    map[string]string `json:"fields"`
+	Timestamp time.Time         `json:"timestamp"`
+}
+
+func newEventSummary(e events.Event) eventSummary {
+	return eventSummary{
+		Type:      string(e.Type),
+		JobID:     e.JobID,
+		Host:      e.Host,
+		Plugin:    e.Plugin,
+		Resource:  e.Resource,
+		Fields:    e.Fields,
+		Timestamp: e.Timestamp,
+	}
+}
+
+const (
+	defaultEventsLimit = 100
+	maxEventsLimit     = 1000
+)
+
+// listEventsHandler serves GET /v1/events, optionally filtered by
+// ?job_id=/?host= and paginated by ?limit= (default 100, capped at 1000 -
+// metadata.Store.ListEventsPage applies whatever limit it's given as-is,
+// so enforcing a sane default/max is this handler's job, not the store's).
+func listEventsHandler(md *metadata.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limit := defaultEventsLimit
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n <= 0 {
+				writeError(w, http.StatusBadRequest, "limit: must be a positive integer")
+				return
+			}
+			if n > maxEventsLimit {
+				n = maxEventsLimit
+			}
+			limit = n
+		}
+
+		filter := metadata.EventFilter{
+			JobID: r.URL.Query().Get("job_id"),
+			Host:  r.URL.Query().Get("host"),
+			Limit: limit,
+		}
+		evts, err := md.ListEventsPage(r.Context(), filter)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		summaries := make([]eventSummary, len(evts))
+		for i, e := range evts {
+			summaries[i] = newEventSummary(e)
 		}
 		writeJSON(w, http.StatusOK, summaries)
 	}

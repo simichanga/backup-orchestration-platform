@@ -164,11 +164,9 @@ CLI-only until the read surface (and its auth) has proven itself; adding
 mutating endpoints is a later, separate decision. Auth is a static bearer
 token (`api.tokens_file`/`api.token_env`, same file-or-env delivery every
 other BOP secret uses) - no anonymous access, no OIDC/mTLS yet. "Viewing
-events" is not implemented as an endpoint yet - `GET /v1/events` is a
-separate, not yet scoped, follow-up - but the durable event store it would
-need now exists (see the Event System section below); the earlier gap was
-"there's nothing to query," not "there's no endpoint." `internal/api`
-implements this; see
+events" is implemented as `GET /v1/events` (optional `?job_id=`/`?host=`
+filters, `?limit=` capped at 1000 - see the Event System section below for
+the durable store behind it). `internal/api` implements all of this; see
 [Configuration Reference](03-getting-started/configuration.md) for the
 `api.*` config block.
 
@@ -206,10 +204,11 @@ same zero-extra-instrumentation property applies. Unlike `jobs`/
 job, so the table is bounded by age: `metadata.event_retention` (default
 30 days) plus a periodic pruner (`internal/cli`'s `runEventPruner`, hourly,
 plus once immediately on `bop controller` startup so a controller that was
-down doesn't wait a full interval to catch up). `metadata.Store.ListEvents`
-exists for this - most-recent-first, no filtering yet - but nothing reads
-it over the network today; that's `GET /v1/events`, a separate follow-up
-(see the API section above).
+down doesn't wait a full interval to catch up). Readable via
+`metadata.Store.ListEventsPage` (job/host filters, a caller-supplied
+limit) or, over the network, `GET /v1/events` (see the API section above),
+which enforces its own default/max limit rather than trusting every
+caller to pass one.
 
 ## Backup Job Lifecycle
 

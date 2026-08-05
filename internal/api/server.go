@@ -35,6 +35,7 @@ func NewServer(addr string, tokens []string, inv *inventory.Inventory, md *metad
 	mux.HandleFunc("GET /v1/jobs", listJobsHandler(md))
 	mux.HandleFunc("GET /v1/jobs/{id}", getJobHandler(md))
 	mux.HandleFunc("GET /v1/snapshots", listSnapshotsHandler(md))
+	mux.HandleFunc("GET /v1/events", listEventsHandler(md))
 
 	return &Server{
 		httpServer: &http.Server{Handler: authMiddleware(hashTokens(tokens), mux)},

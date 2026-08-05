@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"bop/internal/core"
+	"bop/internal/events"
 	"bop/internal/inventory"
 )
 
@@ -31,6 +32,12 @@ func TestServerEndToEnd(t *testing.T) {
 		Size: 100, Checksum: "sha256:aaa", CreatedAt: time.Now().UTC().Truncate(time.Second),
 	}); err != nil {
 		t.Fatalf("RecordSnapshot: %v", err)
+	}
+	if err := md.RecordEvent(context.Background(), events.Event{
+		Type: events.TypeBackupCompleted, JobID: "job-1", Host: "prod-db", Plugin: "postgres",
+		Timestamp: time.Now().UTC().Truncate(time.Second),
+	}); err != nil {
+		t.Fatalf("RecordEvent: %v", err)
 	}
 	inv := &inventory.Inventory{Servers: map[string]inventory.Server{
 		"prod-db": {Host: "10.0.0.1", Plugins: map[string]*inventory.PluginConfig{"postgres": {}}},
@@ -110,6 +117,28 @@ func TestServerEndToEnd(t *testing.T) {
 		}
 	})
 
+	t.Run("valid token reaches the events handler", func(t *testing.T) {
+		resp := get("/v1/events", "real-token")
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200", resp.StatusCode)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		var evts []eventSummary
+		if err := json.Unmarshal(body, &evts); err != nil {
+			t.Fatalf("unmarshal: %v (body: %s)", err, body)
+		}
+		if len(evts) != 1 || evts[0].JobID != "job-1" {
+			t.Errorf("events = %+v, want one entry for job-1", evts)
+		}
+	})
+
+	t.Run("events limit rejects non-positive values", func(t *testing.T) {
+		resp := get("/v1/events?limit=0", "real-token")
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", resp.StatusCode)
+		}
+	})
+
 	t.Run("unknown route is a 404, not an auth bypass", func(t *testing.T) {
 		resp := get("/v1/does-not-exist", "real-token")
 		if resp.StatusCode != http.StatusNotFound {
@@ -147,6 +176,7 @@ func TestServerEndToEnd(t *testing.T) {
 		assertCamelCase(t, "/v1/hosts", "name", "host", "plugins", "schedule")
 		assertCamelCase(t, "/v1/jobs", "id", "host", "plugin", "status", "queuedAt")
 		assertCamelCase(t, "/v1/snapshots?host=prod-db", "id", "jobId", "host", "plugin", "checksum", "createdAt")
+		assertCamelCase(t, "/v1/events", "type", "jobId", "host", "plugin", "resource", "fields", "timestamp")
 	})
 }
 

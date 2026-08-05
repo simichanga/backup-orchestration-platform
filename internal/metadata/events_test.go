@@ -70,6 +70,77 @@ func TestRecordEventWithNilFields(t *testing.T) {
 	}
 }
 
+func TestListEventsPageFilters(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	evts := []events.Event{
+		{Type: events.TypeBackupStarted, JobID: "job-1", Host: "prod-db", Timestamp: now},
+		{Type: events.TypeBackupCompleted, JobID: "job-1", Host: "prod-db", Timestamp: now.Add(time.Second)},
+		{Type: events.TypeBackupStarted, JobID: "job-2", Host: "other-host", Timestamp: now.Add(2 * time.Second)},
+	}
+	for _, e := range evts {
+		if err := s.RecordEvent(ctx, e); err != nil {
+			t.Fatalf("RecordEvent: %v", err)
+		}
+	}
+
+	t.Run("filter by job_id", func(t *testing.T) {
+		got, err := s.ListEventsPage(ctx, EventFilter{JobID: "job-1"})
+		if err != nil {
+			t.Fatalf("ListEventsPage: %v", err)
+		}
+		if len(got) != 2 {
+			t.Fatalf("len(got) = %d, want 2", len(got))
+		}
+	})
+
+	t.Run("filter by host", func(t *testing.T) {
+		got, err := s.ListEventsPage(ctx, EventFilter{Host: "other-host"})
+		if err != nil {
+			t.Fatalf("ListEventsPage: %v", err)
+		}
+		if len(got) != 1 || got[0].JobID != "job-2" {
+			t.Fatalf("got = %+v, want just job-2's event", got)
+		}
+	})
+
+	t.Run("limit caps results", func(t *testing.T) {
+		got, err := s.ListEventsPage(ctx, EventFilter{Limit: 1})
+		if err != nil {
+			t.Fatalf("ListEventsPage: %v", err)
+		}
+		if len(got) != 1 {
+			t.Fatalf("len(got) = %d, want 1", len(got))
+		}
+		// Most recent first, so the single row returned must be the latest.
+		if got[0].JobID != "job-2" {
+			t.Errorf("got[0].JobID = %q, want job-2 (most recent)", got[0].JobID)
+		}
+	})
+
+	t.Run("zero limit means no limit", func(t *testing.T) {
+		got, err := s.ListEventsPage(ctx, EventFilter{Limit: 0})
+		if err != nil {
+			t.Fatalf("ListEventsPage: %v", err)
+		}
+		if len(got) != 3 {
+			t.Fatalf("len(got) = %d, want 3 (unfiltered)", len(got))
+		}
+	})
+
+	t.Run("combined filters", func(t *testing.T) {
+		got, err := s.ListEventsPage(ctx, EventFilter{JobID: "job-1", Host: "prod-db", Limit: 1})
+		if err != nil {
+			t.Fatalf("ListEventsPage: %v", err)
+		}
+		if len(got) != 1 || got[0].Type != events.TypeBackupCompleted {
+			t.Fatalf("got = %+v, want just the most recent job-1/prod-db event", got)
+		}
+	})
+}
+
 func TestListEventsEmpty(t *testing.T) {
 	s := openTestStore(t)
 	got, err := s.ListEvents(context.Background())

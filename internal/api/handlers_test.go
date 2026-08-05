@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bop/internal/core"
+	"bop/internal/events"
 	"bop/internal/inventory"
 	"bop/internal/metadata"
 )
@@ -182,6 +183,103 @@ func TestListSnapshotsHandler(t *testing.T) {
 	}
 	if len(snaps) != 1 || snaps[0].ID != "snap-1" {
 		t.Fatalf("snaps = %+v, want one entry for snap-1", snaps)
+	}
+}
+
+func TestListEventsHandlerDefaultLimit(t *testing.T) {
+	md := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	seedEvent(t, md, "job-1", "prod-db", now)
+	seedEvent(t, md, "job-1", "prod-db", now.Add(time.Second))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/events", nil)
+	rec := httptest.NewRecorder()
+	listEventsHandler(md)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var evts []eventSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &evts); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(evts) != 2 {
+		t.Fatalf("len(evts) = %d, want 2", len(evts))
+	}
+}
+
+func TestListEventsHandlerFiltersByJobIDAndHost(t *testing.T) {
+	md := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	seedEvent(t, md, "job-1", "prod-db", now)
+	seedEvent(t, md, "job-2", "other-host", now.Add(time.Second))
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/events?job_id=job-1&host=prod-db", nil)
+	rec := httptest.NewRecorder()
+	listEventsHandler(md)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var evts []eventSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &evts); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(evts) != 1 || evts[0].JobID != "job-1" {
+		t.Fatalf("evts = %+v, want just job-1's event", evts)
+	}
+}
+
+func TestListEventsHandlerRespectsLimit(t *testing.T) {
+	md := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	for i := 0; i < 5; i++ {
+		seedEvent(t, md, "job-1", "prod-db", now.Add(time.Duration(i)*time.Second))
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/events?limit=2", nil)
+	rec := httptest.NewRecorder()
+	listEventsHandler(md)(rec, req)
+
+	var evts []eventSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &evts); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(evts) != 2 {
+		t.Fatalf("len(evts) = %d, want 2", len(evts))
+	}
+}
+
+func TestListEventsHandlerRejectsNonPositiveLimit(t *testing.T) {
+	md := openTestStore(t)
+	for _, limit := range []string{"0", "-1", "not-a-number"} {
+		req := httptest.NewRequest(http.MethodGet, "/v1/events?limit="+limit, nil)
+		rec := httptest.NewRecorder()
+		listEventsHandler(md)(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("limit=%q: status = %d, want 400", limit, rec.Code)
+		}
+	}
+}
+
+func TestListEventsHandlerClampsLimitToMax(t *testing.T) {
+	md := openTestStore(t)
+	seedEvent(t, md, "job-1", "prod-db", time.Now().UTC())
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/events?limit=999999", nil)
+	rec := httptest.NewRecorder()
+	listEventsHandler(md)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (an oversized limit should clamp, not error)", rec.Code)
+	}
+}
+
+func seedEvent(t *testing.T, md *metadata.Store, jobID, host string, ts time.Time) {
+	t.Helper()
+	e := events.Event{Type: events.TypeBackupCompleted, JobID: jobID, Host: host, Timestamp: ts}
+	if err := md.RecordEvent(context.Background(), e); err != nil {
+		t.Fatalf("RecordEvent: %v", err)
 	}
 }
 
