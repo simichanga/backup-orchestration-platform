@@ -52,15 +52,20 @@ metadata:
   # bounded by age rather than left to grow unbounded.
   event_retention: 720h      # 30 days
 
-# Optional read-only HTTP API (off by default - the CLI covers Phase 1's
-# actual needs). v1 is REST-only, no mutating endpoints (no trigger/restore
-# yet) - see docs/02-architecture.md#api. Every request needs a bearer
-# token; exactly one of tokens_file/token_env is required when enabled.
+# Optional HTTP API (off by default - the CLI covers Phase 1's actual
+# needs). v1 is REST-only - see docs/02-architecture.md#api. Every request
+# needs a bearer token; exactly one of tokens_file/token_env is required
+# when enabled. tokens_file/token_env are read-only; write_tokens_file/
+# write_token_env are optional and separately grant POST /v1/backups
+# (BOP's one mutating endpoint) - leaving both unset keeps the API
+# entirely read-only. See docs/05-operations.md#http-api.
 api:
   enabled: false
   addr: ":9091"
   tokens_file: /etc/bop/api-tokens.txt
   # token_env: BOP_API_TOKEN
+  # write_tokens_file: /etc/bop/api-write-tokens.txt
+  # write_token_env: BOP_API_WRITE_TOKEN
 
 # Observability
 metrics:
@@ -137,17 +142,20 @@ restic repository password, the API's bearer tokens - is delivered one of
 two ways, your choice per secret:
 
 - **`*_file`**: a path to a file containing just the secret
-  (`storage.restic.password_file`, `api.tokens_file`). BOP reads the file's
-  contents at the moment it's needed. `api.tokens_file` is the one
-  exception to "just the secret": it supports one token per line (blank
-  lines and `#` comments ignored), since an API can reasonably have more
-  than one valid caller.
+  (`storage.restic.password_file`, `api.tokens_file`,
+  `api.write_tokens_file`). BOP reads the file's contents at the moment
+  it's needed. The `api.*_file` pair are the one exception to "just the
+  secret": each supports one token per line (blank lines and `#` comments
+  ignored), since an API can reasonably have more than one valid caller
+  per scope.
 - **`*_env`**: the *name* of an environment variable holding the secret
   (`storage.restic.password_env`, postgres's `config.password_env`,
-  `api.token_env`). BOP reads that variable from its own process
-  environment at config/inventory load time (or, for `api.token_env`,
-  controller startup) - which means **something has to put it there before
-  BOP starts**. BOP does not read a `.env` file or any secrets store itself.
+  `api.token_env`, `api.write_token_env`). BOP reads that variable from
+  its own process environment at config/inventory load time (or, for the
+  `api.*` pair, controller startup) - which means **something has to put
+  it there before BOP starts**. BOP does not read a `.env` file or any
+  secrets store itself. Unlike the `*_file` variant, an env var holds
+  exactly one token, not a list.
 
 ```yaml
 postgres:
@@ -167,6 +175,8 @@ api:
   enabled: true
   tokens_file: /etc/bop/api-tokens.txt
   # or: token_env: BOP_API_TOKEN (exactly one token, not a list)
+  # optional - grants POST /v1/backups too; omit to stay read-only:
+  write_tokens_file: /etc/bop/api-write-tokens.txt
 ```
 
 ### Delivering the value: systemd (recommended)

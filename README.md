@@ -18,14 +18,15 @@ SQLite metadata, and an in-process cron scheduler. Every code path
 just unit-tested - see [docs/04-writing-plugins.md](docs/04-writing-plugins.md#testing-expectations)
 for what that verification covered.
 
-There's an optional read-only HTTP API (`api.enabled`, off by default,
-bearer-token auth) covering hosts/jobs/snapshots/events - see
-[docs/05-operations.md](docs/05-operations.md#read-only-api). Every
-controller event is durably persisted and age-pruned (`metadata.db`'s
+There's an optional HTTP API (`api.enabled`, off by default, bearer-token
+auth) covering hosts/jobs/snapshots/events (read-only tokens) plus
+triggering an ad-hoc backup (`POST /v1/backups`, a separate write-scoped
+token) - see [docs/05-operations.md](docs/05-operations.md#http-api).
+Every controller event is durably persisted and age-pruned (`metadata.db`'s
 `events` table, `metadata.event_retention`) - see
 [docs/02-architecture.md](docs/02-architecture.md#event-system). There is
-no multi-controller/HA story, no mutating API endpoints (trigger/restore
-stay CLI-only), and no out-of-process plugin loading yet - see
+no multi-controller/HA story, restore still stays CLI-only, and there's no
+out-of-process plugin loading yet - see
 [docs/02-architecture.md](docs/02-architecture.md) and
 [docs/05-operations.md](docs/05-operations.md#known-operational-behavior-read-before-youre-paged)
 for the current honest limitations.

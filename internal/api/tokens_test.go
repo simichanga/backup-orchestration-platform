@@ -58,6 +58,48 @@ func TestLoadTokensFromFileEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadWriteTokensUnconfiguredReturnsNil(t *testing.T) {
+	tokens, err := LoadWriteTokens(config.APIConfig{})
+	if err != nil {
+		t.Fatalf("LoadWriteTokens: %v", err)
+	}
+	if tokens != nil {
+		t.Errorf("LoadWriteTokens = %v, want nil (no write scope configured)", tokens)
+	}
+}
+
+func TestLoadWriteTokensFromEnv(t *testing.T) {
+	t.Setenv("BOP_TEST_API_WRITE_TOKEN", "write-secret")
+	tokens, err := LoadWriteTokens(config.APIConfig{WriteTokenEnv: "BOP_TEST_API_WRITE_TOKEN"})
+	if err != nil {
+		t.Fatalf("LoadWriteTokens: %v", err)
+	}
+	if len(tokens) != 1 || tokens[0] != "write-secret" {
+		t.Errorf("LoadWriteTokens = %v, want [write-secret]", tokens)
+	}
+}
+
+func TestLoadWriteTokensFromEnvUnset(t *testing.T) {
+	_, err := LoadWriteTokens(config.APIConfig{WriteTokenEnv: "BOP_TEST_API_WRITE_TOKEN_UNSET"})
+	if err == nil {
+		t.Fatal("LoadWriteTokens: expected an error for an unset write_token_env, got nil")
+	}
+}
+
+func TestLoadWriteTokensFromFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "write-tokens.txt")
+	writeFile(t, path, "write-token-one\n")
+
+	tokens, err := LoadWriteTokens(config.APIConfig{WriteTokensFile: path})
+	if err != nil {
+		t.Fatalf("LoadWriteTokens: %v", err)
+	}
+	if len(tokens) != 1 || tokens[0] != "write-token-one" {
+		t.Errorf("LoadWriteTokens = %v, want [write-token-one]", tokens)
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {

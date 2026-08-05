@@ -88,12 +88,12 @@ Logs are structured (`logging.format: json` by default) and go to stdout -
 `journalctl -u bop-controller` picks them up under the systemd unit above
 with no extra configuration.
 
-## Read-Only API
+## HTTP API
 
-`bop controller` can optionally serve a read-only HTTP API alongside
-metrics - off by default, since the CLI already covers Phase 1's actual
-needs. Enable it with `api.enabled: true` and one of `api.tokens_file`/
-`api.token_env` (same `*_file`/`*_env` delivery as every other secret - see
+`bop controller` can optionally serve an HTTP API alongside metrics - off
+by default, since the CLI already covers Phase 1's actual needs. Enable it
+with `api.enabled: true` and one of `api.tokens_file`/`api.token_env`
+(same `*_file`/`*_env` delivery as every other secret - see
 [Configuration Reference](03-getting-started/configuration.md#secrets-management)).
 Every request needs `Authorization: Bearer <token>`; there's no anonymous
 access.
@@ -103,28 +103,54 @@ api:
   enabled: true
   addr: "127.0.0.1:9091"
   tokens_file: /etc/bop/api-tokens.txt
+  # Optional - see "Read vs write tokens" below. Omit both to keep the API
+  # entirely read-only regardless of what's registered on it.
+  write_tokens_file: /etc/bop/api-write-tokens.txt
 ```
 
-Endpoints (all read-only - v1 has no trigger/restore endpoints, those stay
-CLI-only for now):
+Endpoints:
 
-| Method | Path                    | Notes                                                    |
-|--------|--------------------------|-----------------------------------------------------------|
-| GET    | `/v1/hosts`              | Inventory hosts and their plugins                          |
-| GET    | `/v1/jobs`               | All jobs, optional `?status=` filter                        |
-| GET    | `/v1/jobs/{id}`          | A single job, 404 if unknown                               |
-| GET    | `/v1/snapshots?host=...` | Snapshot history for a host (required)                     |
-| GET    | `/v1/events`             | Recent events, optional `?job_id=`/`?host=`, `?limit=` (default 100, max 1000) |
+| Method | Path                    | Scope | Notes                                                    |
+|--------|--------------------------|-------|-----------------------------------------------------------|
+| GET    | `/v1/hosts`              | read  | Inventory hosts and their plugins                          |
+| GET    | `/v1/jobs`               | read  | All jobs, optional `?status=` filter                        |
+| GET    | `/v1/jobs/{id}`          | read  | A single job, 404 if unknown                               |
+| GET    | `/v1/snapshots?host=...` | read  | Snapshot history for a host (required)                     |
+| GET    | `/v1/events`             | read  | Recent events, optional `?job_id=`/`?host=`, `?limit=` (default 100, max 1000) |
+| POST   | `/v1/backups`            | write | `{"host": "...", "plugin": "..."}` - triggers an ad-hoc backup |
+
+`bop restore` and everything else in [Quickstart](03-getting-started/quickstart.md#9-test-a-restore)
+stays CLI-only for now - `POST /v1/backups` is deliberately the only
+mutating endpoint in this pass.
+
+### Read vs write tokens
+
+`api.tokens_file`/`api.token_env` are **read-only**: they can hit every
+`GET` endpoint but not `POST /v1/backups`. A separate, optional
+`api.write_tokens_file`/`api.write_token_env` pair grants write access
+(which implicitly includes read access too - write is a superset, not a
+separate track). Leaving both unset keeps the API entirely read-only
+regardless of `POST /v1/backups` being registered - a token provisioned
+before this endpoint existed does not silently gain the power to trigger
+backups just because BOP was upgraded.
+
+`POST /v1/backups` enqueues the job for the controller's own consumer to
+run - the same path a scheduled job takes, not "bop backup"'s inline
+execution - so it returns `202 Accepted` with the job (in `queued` status)
+immediately, not once the backup finishes. Poll `GET /v1/jobs/{id}` for
+the outcome.
 
 **BOP does not terminate TLS on this port.** It's plain HTTP - the bearer
 token protects against unauthorized *use*, not against network
 eavesdropping. Bind `api.addr` to loopback (as above) and put a reverse
 proxy in front if you need it reachable beyond the controller host, the
-same posture you'd take with `metrics.port`.
+same posture you'd take with `metrics.port`. This matters more now that a
+leaked write token can trigger real backup jobs, not just read data.
 
-If you add `api.tokens_file`/credential wiring to the systemd unit above,
-it goes through the same `EnvironmentFile=`/`LoadCredential=` mechanisms
-already there for postgres/restic secrets - nothing API-specific about it.
+If you add `api.tokens_file`/`api.write_tokens_file`/credential wiring to
+the systemd unit above, it goes through the same `EnvironmentFile=`/
+`LoadCredential=` mechanisms already there for postgres/restic secrets -
+nothing API-specific about it.
 
 ## Known Operational Behavior (Read Before You're Paged)
 

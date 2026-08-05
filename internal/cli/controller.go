@@ -70,11 +70,15 @@ func newControllerCmd(configPath *string) *cobra.Command {
 			// "this case doesn't exist" for an optional server.
 			var apiErrCh <-chan error
 			if a.Config.API.Enabled {
-				tokens, err := api.LoadTokens(a.Config.API)
+				readTokens, err := api.LoadTokens(a.Config.API)
 				if err != nil {
 					return fmt.Errorf("load api tokens: %w", err)
 				}
-				apiServer, err := api.NewServer(a.Config.API.Addr, tokens, a.Inventory, a.Metadata)
+				writeTokens, err := api.LoadWriteTokens(a.Config.API)
+				if err != nil {
+					return fmt.Errorf("load api write tokens: %w", err)
+				}
+				apiServer, err := api.NewServer(a.Config.API.Addr, readTokens, writeTokens, a.Controller, a.Queue)
 				if err != nil {
 					return fmt.Errorf("start api server: %w", err)
 				}

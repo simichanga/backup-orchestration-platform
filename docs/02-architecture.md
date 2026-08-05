@@ -157,16 +157,30 @@ The API exposes the controller and metadata. The original design called for
 - Querying snapshot history
 - Viewing events and metrics
 
-**Phase 1 implementation notes** (v1 scope, decided 2026-08-05): REST only -
-gRPC is deferred until something actually needs it, not built speculatively
-alongside REST. Read-only for v1 - triggering backups/restores stays
-CLI-only until the read surface (and its auth) has proven itself; adding
-mutating endpoints is a later, separate decision. Auth is a static bearer
-token (`api.tokens_file`/`api.token_env`, same file-or-env delivery every
-other BOP secret uses) - no anonymous access, no OIDC/mTLS yet. "Viewing
-events" is implemented as `GET /v1/events` (optional `?job_id=`/`?host=`
-filters, `?limit=` capped at 1000 - see the Event System section below for
-the durable store behind it). `internal/api` implements all of this; see
+**Phase 1 implementation notes** (v1 scope, decided 2026-08-05, extended
+2026-08-05 same day): REST only - gRPC is deferred until something
+actually needs it, not built speculatively alongside REST. Auth is a
+static bearer token (`api.tokens_file`/`api.token_env`, same file-or-env
+delivery every other BOP secret uses) - no anonymous access, no OIDC/mTLS
+yet. "Viewing events" is implemented as `GET /v1/events` (optional
+`?job_id=`/`?host=` filters, `?limit=` capped at 1000 - see the Event
+System section below for the durable store behind it).
+
+"Triggering ad-hoc backups" is implemented as `POST /v1/backups` - the
+one mutating endpoint built so far. It requires a *separate* token scope
+(`api.write_tokens_file`/`api.write_token_env`, optional - unset means no
+write access exists at all, not "any read token now also works"): read
+access alone was already provisioned before this endpoint existed, and
+silently upgrading its power on a BOP upgrade would be a surprising
+privilege escalation for whoever holds a read token. A write token also
+grants read access - write is a superset, not a separate track. "Starting
+restores" is still CLI-only (`bop restore`) - a deliberately narrower v1
+scope than the original design's full endpoint list; restore is
+higher-stakes than trigger-backup and gets its own scoping round later
+rather than shipping alongside it by default. See
+[docs/05-operations.md](05-operations.md#http-api) for the concrete
+request/response shapes and the read/write token split in detail.
+`internal/api` implements all of this; see
 [Configuration Reference](03-getting-started/configuration.md) for the
 `api.*` config block.
 

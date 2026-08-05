@@ -91,6 +91,15 @@ type APIConfig struct {
 	Addr       string `mapstructure:"addr"`
 	TokensFile string `mapstructure:"tokens_file"`
 	TokenEnv   string `mapstructure:"token_env"`
+	// WriteTokensFile/WriteTokenEnv are optional and separate from
+	// TokensFile/TokenEnv (not a role field on the same token list):
+	// leaving them unset keeps the API read-only, so a token provisioned
+	// before mutating endpoints existed doesn't silently gain the power to
+	// trigger backups just because BOP was upgraded. A write token
+	// implicitly grants read access too - write is a superset, not a
+	// separate track.
+	WriteTokensFile string `mapstructure:"write_tokens_file"`
+	WriteTokenEnv   string `mapstructure:"write_token_env"`
 }
 
 type MetricsConfig struct {
@@ -214,6 +223,11 @@ func (c *Config) Validate() error {
 		}
 		if !hasFile && !hasEnv {
 			return fmt.Errorf("api: one of tokens_file or token_env is required when api.enabled is true")
+		}
+		hasWriteFile := c.API.WriteTokensFile != ""
+		hasWriteEnv := c.API.WriteTokenEnv != ""
+		if hasWriteFile && hasWriteEnv {
+			return fmt.Errorf("api: write_tokens_file and write_token_env are mutually exclusive")
 		}
 	}
 	if c.Controller.Concurrency < 1 {

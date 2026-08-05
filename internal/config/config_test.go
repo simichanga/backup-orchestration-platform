@@ -132,6 +132,30 @@ api:
 	if cfg.API.TokenEnv != "BOP_API_TOKEN" {
 		t.Errorf("API.TokenEnv = %q, want BOP_API_TOKEN", cfg.API.TokenEnv)
 	}
+	if cfg.API.WriteTokenEnv != "" {
+		t.Errorf("API.WriteTokenEnv = %q, want empty (write scope is optional)", cfg.API.WriteTokenEnv)
+	}
+}
+
+func TestLoadAPIEnabledWithWriteTokenEnv(t *testing.T) {
+	path := writeConfigFile(t, `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+api:
+  enabled: true
+  token_env: BOP_API_TOKEN
+  write_token_env: BOP_API_WRITE_TOKEN
+`)
+	cfg, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.API.WriteTokenEnv != "BOP_API_WRITE_TOKEN" {
+		t.Errorf("API.WriteTokenEnv = %q, want BOP_API_WRITE_TOKEN", cfg.API.WriteTokenEnv)
+	}
 }
 
 func TestLoadValidationErrors(t *testing.T) {
@@ -219,6 +243,21 @@ api:
   enabled: true
   tokens_file: /etc/bop/api-tokens.txt
   token_env: BOP_API_TOKEN
+`,
+		},
+		{
+			name: "api write_tokens_file and write_token_env both set",
+			yaml: `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+api:
+  enabled: true
+  tokens_file: /etc/bop/api-tokens.txt
+  write_tokens_file: /etc/bop/api-write-tokens.txt
+  write_token_env: BOP_API_WRITE_TOKEN
 `,
 		},
 		{
