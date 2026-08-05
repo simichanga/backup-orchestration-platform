@@ -190,7 +190,9 @@ nothing API-specific about it.
 - **No multi-controller / HA story.** One controller process, one SQLite
   metadata database, one in-memory job queue. Losing the controller host
   loses in-flight (not yet-persisted) scheduling state until it comes back;
-  already-stored backups in the restic repository are unaffected.
+  already-stored backups in the restic repository are unaffected. See
+  [docs/06-high-availability.md](06-high-availability.md) for a concrete,
+  not-yet-implemented design proposal.
 - **Every event is persisted, then pruned by age.** `metadata.db` now has
   an `events` table (discovery started, artifact created, upload
   completed, ...) alongside `jobs`/`snapshots`, kept for

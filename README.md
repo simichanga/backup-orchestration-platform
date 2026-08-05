@@ -29,7 +29,10 @@ no multi-controller/HA story, restore still stays CLI-only, and there's no
 out-of-process plugin loading yet - see
 [docs/02-architecture.md](docs/02-architecture.md) and
 [docs/05-operations.md](docs/05-operations.md#known-operational-behavior-read-before-youre-paged)
-for the current honest limitations.
+for the current honest limitations. Design proposals (not implemented)
+exist for both of those gaps:
+[docs/06-high-availability.md](docs/06-high-availability.md) and
+[docs/07-out-of-process-plugins.md](docs/07-out-of-process-plugins.md).
 
 ## Getting Started
 

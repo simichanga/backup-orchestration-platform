@@ -108,7 +108,9 @@ through a registry, which decouples "what plugin runs" from "how it runs":
 - **Phase 1**: core plugins (postgres, filesystem) are compiled directly into
   the `bop` binary and registered in-process. No separate install step.
 - **Later**: the registry can resolve plugins as external binaries/processes
-  (scanning `plugins.dir`) for isolation and third-party/out-of-tree plugins.
+  (scanning `plugins.dir`) for isolation and third-party/out-of-tree plugins -
+  see [docs/07-out-of-process-plugins.md](07-out-of-process-plugins.md) for a
+  concrete, not-yet-implemented design proposal.
 
 Because plugin authors only ever implement the `BackupPlugin` interface, this
 transition doesn't change plugin code - only the Plugin Engine's resolution
@@ -240,6 +242,12 @@ BOP's architecture scales incrementally.
 ![](resources/scalability-model.png)
 
 At every phase, the core backup pipeline remains unchanged.
+
+Multi-controller/HA (the "one controller host is a single point of
+failure" gap referenced throughout this doc and
+`docs/05-operations.md`'s Known Operational Behavior section) has a
+concrete, not-yet-implemented design proposal:
+[docs/06-high-availability.md](06-high-availability.md).
 
 ## Kubernetes Migration Path
 
