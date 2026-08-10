@@ -88,7 +88,7 @@ Logs are structured (`logging.format: json` by default) and go to stdout -
 `journalctl -u bop-controller` picks them up under the systemd unit above
 with no extra configuration.
 
-## HTTP API
+## HTTP API and web UI
 
 `bop controller` can optionally serve an HTTP API alongside metrics - off
 by default, since the CLI already covers Phase 1's actual needs. Enable it
@@ -97,6 +97,17 @@ with `api.enabled: true` and one of `api.tokens_file`/`api.token_env`
 [Configuration Reference](03-getting-started/configuration.md#secrets-management)).
 Every request needs `Authorization: Bearer <token>`; there's no anonymous
 access.
+
+A browser-based ops console (`web/`, see its own README) is served from
+the same address and port as the API - visit `api.addr` directly (e.g.
+`http://127.0.0.1:9091/`) and paste a token in. It's a React/TypeScript
+single-page app built at release time and embedded into the `bop` binary
+(`internal/webui`), so there's no separate deploy or Node.js runtime to
+run in production. The token you paste lives only in that browser tab's
+`sessionStorage` - it is never sent anywhere but the `/v1/*` endpoints
+below, and is gone as soon as the tab closes. A write token can also
+trigger an ad-hoc backup from the dashboard; a read token can only view -
+same scope rules as the API itself, since the UI is just a client of it.
 
 ```yaml
 api:

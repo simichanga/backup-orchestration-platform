@@ -28,8 +28,13 @@ type Server struct {
 // later by whoever tries to call it. writeTokens may be nil/empty - see
 // LoadWriteTokens - in which case POST /v1/backups is registered but
 // unreachable by any token (a 401 for everyone, not a 404), since no
-// write scope has been configured at all.
-func NewServer(addr string, readTokens, writeTokens []string, ctl *controller.Controller, q queue.Queue) (*Server, error) {
+// write scope has been configured at all. uiHandler is mounted at "/" and
+// may be nil (no UI served, unmatched paths 404) - it takes a plain
+// http.Handler rather than importing internal/webui directly, so this
+// package stays a pure HTTP API with no knowledge of the frontend that
+// happens to share its port; see internal/cli/controller.go for the
+// caller that supplies it.
+func NewServer(addr string, readTokens, writeTokens []string, ctl *controller.Controller, q queue.Queue, uiHandler http.Handler) (*Server, error) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("api: listen on %s: %w", addr, err)
@@ -51,6 +56,13 @@ func NewServer(addr string, readTokens, writeTokens []string, ctl *controller.Co
 	mux.Handle("GET /v1/snapshots", authMiddleware(readHashes, listSnapshotsHandler(ctl.Metadata)))
 	mux.Handle("GET /v1/events", authMiddleware(readHashes, listEventsHandler(ctl.Metadata)))
 	mux.Handle("POST /v1/backups", authMiddleware(writeHashes, triggerBackupHandler(ctl, q)))
+	if uiHandler != nil {
+		// Unauthenticated at this layer deliberately: the served assets
+		// (HTML/JS/CSS) carry no secrets - the token lives in the browser's
+		// sessionStorage and is only ever sent to the /v1/* endpoints above,
+		// which stay behind authMiddleware regardless of this registration.
+		mux.Handle("/", uiHandler)
+	}
 
 	return &Server{
 		httpServer: &http.Server{Handler: mux},

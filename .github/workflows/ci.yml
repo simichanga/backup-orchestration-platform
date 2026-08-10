@@ -12,6 +12,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web UI
+        run: |
+          npm --prefix web ci
+          npm --prefix web run build
+
+      # internal/webui/dist is committed (see internal/webui/webui.go) so
+      # `go build`/`go install` work with no Node.js runtime required -
+      # this catches someone forgetting to run `make build-web` and commit
+      # the result after changing web/.
+      - name: Check committed UI build is up to date
+        run: |
+          if ! git diff --quiet -- internal/webui/dist; then
+            echo "internal/webui/dist is out of date with web/ - run 'make build-web' and commit the result."
+            git diff --stat -- internal/webui/dist
+            exit 1
+          fi
+
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod

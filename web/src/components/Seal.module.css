@@ -1,0 +1,30 @@
+.wrap {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.track {
+  stroke: var(--border);
+}
+
+.progress {
+  stroke: var(--accent);
+  transition: stroke-dasharray var(--duration-med) var(--ease-out);
+}
+
+.complete {
+  stroke: var(--success);
+  transition: stroke-dasharray var(--duration-med) var(--ease-out);
+}
+
+.failed {
+  stroke: var(--danger);
+}
+
+.mark {
+  stroke: var(--success-strong);
+}
+
+.markFailed {
+  stroke: var(--danger-strong);
+}

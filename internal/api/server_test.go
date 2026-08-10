@@ -80,7 +80,7 @@ func TestServerEndToEnd(t *testing.T) {
 	ctl := newTestController(t, md, inv)
 	q := queue.NewMemory(16)
 
-	s, err := NewServer("127.0.0.1:0", []string{"read-token"}, []string{"write-token"}, ctl, q)
+	s, err := NewServer("127.0.0.1:0", []string{"read-token"}, []string{"write-token"}, ctl, q, nil)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestNewServerFailsFastOnPortInUse(t *testing.T) {
 	ctl := newTestController(t, md, inv)
 	q := queue.NewMemory(16)
 
-	s1, err := NewServer("127.0.0.1:0", []string{"t"}, nil, ctl, q)
+	s1, err := NewServer("127.0.0.1:0", []string{"t"}, nil, ctl, q, nil)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestNewServerFailsFastOnPortInUse(t *testing.T) {
 		s1.Shutdown(ctx)
 	})
 
-	if _, err := NewServer(s1.Addr(), []string{"t"}, nil, ctl, q); err == nil {
+	if _, err := NewServer(s1.Addr(), []string{"t"}, nil, ctl, q, nil); err == nil {
 		t.Fatal("NewServer: expected an error binding an already-bound address, got nil")
 	}
 }

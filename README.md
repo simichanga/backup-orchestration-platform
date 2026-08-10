@@ -21,7 +21,10 @@ for what that verification covered.
 There's an optional HTTP API (`api.enabled`, off by default, bearer-token
 auth) covering hosts/jobs/snapshots/events (read-only tokens) plus
 triggering an ad-hoc backup (`POST /v1/backups`, a separate write-scoped
-token) - see [docs/05-operations.md](docs/05-operations.md#http-api).
+token), and a browser-based ops console (`web/`, a React/TypeScript SPA
+embedded into the `bop` binary and served from the same port - no
+separate deploy or Node.js runtime required to run it) - see
+[docs/05-operations.md](docs/05-operations.md#http-api-and-web-ui).
 Every controller event is durably persisted and age-pruned (`metadata.db`'s
 `events` table, `metadata.event_retention`) - see
 [docs/02-architecture.md](docs/02-architecture.md#event-system). There is
@@ -54,6 +57,11 @@ go build -o bin/bop ./cmd/bop
 # or, to also embed the version (git describe) into `bop version`:
 make build
 ```
+
+`internal/webui/dist` (the built web UI - see `web/README.md`) is
+committed, so plain `go build`/`go install` work with no Node.js runtime
+installed. After changing anything under `web/`, run `make build-web` and
+commit the result - CI checks that `internal/webui/dist` isn't stale.
 
 ```bash
 go test ./...

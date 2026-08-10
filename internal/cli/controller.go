@@ -14,11 +14,13 @@ import (
 	"bop/internal/api"
 	"bop/internal/metrics"
 	"bop/internal/scheduler"
+	"bop/internal/webui"
 )
 
 // newControllerCmd runs the controller daemon: loads inventory, registers
-// plugins, starts the metrics HTTP server, the optional read-only API
-// server (api.enabled), and the scheduler, and runs a single serial
+// plugins, starts the metrics HTTP server, the optional API server
+// (api.enabled, also serves the embedded web UI on the same port - see
+// internal/webui), and the scheduler, and runs a single serial
 // consumer that drains the queue alongside a periodic event-table pruner.
 // Shuts down cleanly on
 // SIGINT/SIGTERM - a job in progress at shutdown ends up failed, not stuck
@@ -78,7 +80,11 @@ func newControllerCmd(configPath *string) *cobra.Command {
 				if err != nil {
 					return fmt.Errorf("load api write tokens: %w", err)
 				}
-				apiServer, err := api.NewServer(a.Config.API.Addr, readTokens, writeTokens, a.Controller, a.Queue)
+				uiHandler, err := webui.Handler()
+				if err != nil {
+					return fmt.Errorf("build web ui handler: %w", err)
+				}
+				apiServer, err := api.NewServer(a.Config.API.Addr, readTokens, writeTokens, a.Controller, a.Queue, uiHandler)
 				if err != nil {
 					return fmt.Errorf("start api server: %w", err)
 				}

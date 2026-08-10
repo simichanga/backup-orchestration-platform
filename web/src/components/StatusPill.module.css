@@ -1,0 +1,58 @@
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--step--1);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.queued .dot {
+  background: var(--text-dim);
+}
+
+.queued {
+  color: var(--text-muted);
+}
+
+.in_progress .dot {
+  background: var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.in_progress {
+  color: var(--accent-strong);
+}
+
+.completed .dot {
+  background: var(--success);
+}
+
+.completed {
+  color: var(--success-strong);
+}
+
+.failed .dot {
+  background: var(--danger);
+}
+
+.failed {
+  color: var(--danger-strong);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}

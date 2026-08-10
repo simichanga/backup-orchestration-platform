@@ -1,0 +1,137 @@
+/*
+  BOP ops console - design tokens.
+
+  Concept: a vault ledger. BOP's job is custody of data - discovery,
+  transfer, sealing (verification), retention - and the console reads
+  like the instrument for that: dense, exact, unhurried. Dark ink base
+  (archival paper in negative) with brass vault-hardware for anything
+  active, and stamp-ink sage/rust for the two outcomes that matter.
+*/
+
+:root {
+  --ink-950: #0c1012;
+  --ink-900: #12181b;
+  --ink-800: #1a2226;
+  --ink-700: #232d32;
+  --ink-600: #384349;
+
+  --paper-100: #f6f3ec;
+  --paper-200: #e9e4d8;
+  --paper-300: #cfc9b8;
+
+  --slate-400: #7c8990;
+  --slate-500: #5b6770;
+  --slate-600: #414c52;
+
+  --brass-400: #d1a565;
+  --brass-500: #b98a4a;
+  --brass-600: #8f6a37;
+
+  --sage-400: #8aab86;
+  --sage-500: #6e8f6b;
+  --sage-600: #526c50;
+
+  --rust-400: #c06f57;
+  --rust-500: #a8503a;
+  --rust-600: #7e3a29;
+
+  --font-display: 'Fraunces', ui-serif, Georgia, serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', monospace;
+
+  --step--1: clamp(0.79rem, 0.76rem + 0.16vw, 0.86rem);
+  --step-0: clamp(0.94rem, 0.9rem + 0.2vw, 1rem);
+  --step-1: clamp(1.13rem, 1.06rem + 0.35vw, 1.25rem);
+  --step-2: clamp(1.35rem, 1.24rem + 0.55vw, 1.6rem);
+  --step-3: clamp(1.9rem, 1.6rem + 1.2vw, 2.5rem);
+  --step-4: clamp(2.6rem, 2.1rem + 2vw, 3.6rem);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  --radius-sm: 3px;
+  --radius-md: 5px;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 120ms;
+  --duration-med: 240ms;
+
+  color-scheme: dark;
+
+  --bg: var(--ink-900);
+  --surface: var(--ink-800);
+  --surface-raised: var(--ink-700);
+  --border: var(--ink-600);
+  --text: var(--paper-200);
+  --text-muted: var(--slate-400);
+  --text-dim: var(--slate-500);
+  --accent: var(--brass-500);
+  --accent-strong: var(--brass-400);
+  --success: var(--sage-500);
+  --success-strong: var(--sage-400);
+  --danger: var(--rust-500);
+  --danger-strong: var(--rust-400);
+  --focus-ring: var(--brass-400);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    color-scheme: light;
+    --bg: var(--paper-100);
+    --surface: #ffffff;
+    --surface-raised: var(--paper-200);
+    --border: var(--paper-300);
+    --text: var(--ink-900);
+    --text-muted: var(--slate-500);
+    --text-dim: var(--slate-400);
+    --accent: var(--brass-600);
+    --accent-strong: var(--brass-500);
+    --success: var(--sage-600);
+    --success-strong: var(--sage-500);
+    --danger: var(--rust-600);
+    --danger-strong: var(--rust-500);
+    --focus-ring: var(--brass-600);
+  }
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: var(--paper-100);
+  --surface: #ffffff;
+  --surface-raised: var(--paper-200);
+  --border: var(--paper-300);
+  --text: var(--ink-900);
+  --text-muted: var(--slate-500);
+  --text-dim: var(--slate-400);
+  --accent: var(--brass-600);
+  --accent-strong: var(--brass-500);
+  --success: var(--sage-600);
+  --success-strong: var(--sage-500);
+  --danger: var(--rust-600);
+  --danger-strong: var(--rust-500);
+  --focus-ring: var(--brass-600);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: var(--ink-900);
+  --surface: var(--ink-800);
+  --surface-raised: var(--ink-700);
+  --border: var(--ink-600);
+  --text: var(--paper-200);
+  --text-muted: var(--slate-400);
+  --text-dim: var(--slate-500);
+  --accent: var(--brass-500);
+  --accent-strong: var(--brass-400);
+  --success: var(--sage-500);
+  --success-strong: var(--sage-400);
+  --danger: var(--rust-500);
+  --danger-strong: var(--rust-400);
+  --focus-ring: var(--brass-400);
+}

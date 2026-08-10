@@ -180,11 +180,18 @@ restores" is still CLI-only (`bop restore`) - a deliberately narrower v1
 scope than the original design's full endpoint list; restore is
 higher-stakes than trigger-backup and gets its own scoping round later
 rather than shipping alongside it by default. See
-[docs/05-operations.md](05-operations.md#http-api) for the concrete
-request/response shapes and the read/write token split in detail.
-`internal/api` implements all of this; see
+[docs/05-operations.md](05-operations.md#http-api-and-web-ui) for the
+concrete request/response shapes and the read/write token split in
+detail. `internal/api` implements all of this; see
 [Configuration Reference](03-getting-started/configuration.md) for the
 `api.*` config block.
+
+A browser UI (`web/`, see its README) is a client of this same API and
+nothing more - it holds no server-side state or auth of its own, and
+`internal/api` has no notion that it exists beyond mounting its built,
+embedded assets (`internal/webui`) at `/`. Anything the UI can do, the
+API already allowed; the UI added no new capability or attack surface,
+only a way to reach the existing one without curl.
 
 ### Event System
 
