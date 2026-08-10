@@ -28,11 +28,28 @@ if ($Cleanup) {
     exit 0
 }
 
+# Well-known fallback locations for tools that are on PATH in a normal
+# interactive session but can go missing from PATH when this script runs
+# through a non-interactive parent (a background job, a scheduled task, a
+# `make` target - PATH resolution for these has been observed to differ
+# from an interactive shell even on the same machine, same user). Checked
+# only if Get-Command can't find the tool on PATH first.
+$FallbackToolPaths = @{
+    'ssh-keygen'  = "$env:WINDIR\System32\OpenSSH\ssh-keygen.exe"
+    'ssh-keyscan' = "$env:WINDIR\System32\OpenSSH\ssh-keyscan.exe"
+}
+
 function Require-Command($name, $hint) {
-    if (-not (Get-Command $name -ErrorAction SilentlyContinue)) {
-        Write-Host "Missing '$name'. $hint" -ForegroundColor Red
-        exit 1
+    if (Get-Command $name -ErrorAction SilentlyContinue) { return }
+
+    $fallback = $FallbackToolPaths[$name]
+    if ($fallback -and (Test-Path $fallback)) {
+        $env:PATH = "$(Split-Path $fallback);$env:PATH"
+        return
     }
+
+    Write-Host "Missing '$name'. $hint" -ForegroundColor Red
+    exit 1
 }
 
 # Out-File -Encoding utf8 writes a UTF-8 byte-order-mark on Windows

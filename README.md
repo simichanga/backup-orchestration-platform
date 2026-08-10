@@ -55,24 +55,33 @@ a real demo and opens the web UI, no manual config required.
 Writing a new plugin (a new data source beyond postgres/filesystem)? Start
 at [docs/04-writing-plugins.md](docs/04-writing-plugins.md).
 
-## Building
+## Building and running
 
-```bash
-go build -o bin/bop ./cmd/bop
-# or, to also embed the version (git describe) into `bop version`:
-make build
+`make` (bare, or `make help`) lists every target:
+
+```
+make build         Build bop (rebuilds the web UI first)
+make build-web     Rebuild only the embedded web UI
+make run           Build, then run the bundled binary against CONFIG= (default config.yaml)
+make dev           Run the backend and the frontend dev server together, hot-reloading (Windows, needs CONFIG=)
+make demo          Zero-config real demo: throwaway Docker target + real controller + browser (Windows)
+make demo-clean    Remove the demo's Docker container and temp files
+make test          go test ./...
+make vet           go vet ./...
+make fmt           List any files gofmt would reformat
+make clean         Remove bin/
 ```
 
-`internal/webui/dist` (the built web UI - see `web/README.md`) is
-committed, so plain `go build`/`go install` work with no Node.js runtime
-installed. After changing anything under `web/`, run `make build-web` and
-commit the result - CI checks that `internal/webui/dist` isn't stale.
+`make run`/`make dev` need a real `config.yaml` (`CONFIG=path` to override
+the default) - `make demo` doesn't, it builds a real one for you. See
+[TESTING.md](TESTING.md) for what `make demo`/`scripts/try-it-out.ps1`
+actually do.
 
-```bash
-go test ./...
-go vet ./...
-gofmt -l .
-```
+Plain `go build -o bin/bop ./cmd/bop` also works and doesn't need `make`
+or Node.js at all - `internal/webui/dist` (the built web UI, see
+`web/README.md`) is committed, so the frontend is already baked in. After
+changing anything under `web/`, run `make build-web` and commit the
+result - CI checks that `internal/webui/dist` isn't stale.
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same build/vet/fmt
 checks on every push, plus `go test -race ./...` - the race detector needs a C
