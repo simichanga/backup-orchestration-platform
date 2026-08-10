@@ -61,12 +61,18 @@ default alongside trigger-backup. Still true; still needs that round.
 
 Started. Vitest + React Testing Library are wired up
 (`web/vite.config.ts`'s `test` block, `make test-web`, and a CI step), with
-coverage of `src/api/client.ts`'s auth/401 handling and `src/state/auth.tsx`
-- including a regression test for the exact read-only-token-logs-out-the-
-session bug manual Playwright testing caught once (see
-`web/src/state/auth.test.tsx`). Everything else under `web/` (components,
-pages) still has zero coverage - this closed the highest-risk gap, not the
-whole gap.
+coverage of: `src/api/client.ts`'s auth/401 handling and `src/state/auth.tsx`
+(including a regression test for the exact read-only-token-logs-out-the-
+session bug manual Playwright testing caught once, see
+`web/src/state/auth.test.tsx`); `src/lib/format.ts` and `src/lib/activity.ts`
+(pure formatting/bucketing logic); `src/components/Seal.tsx`'s
+`sealTierForEvents` (the verification-tier derivation, not decoration - see
+its own doc comment); `src/hooks/useApi.ts` (stale-request guarding,
+silent background-refresh-on-error, and visibility-based poll pause/resume -
+previously verified only by hand); and `src/components/TriggerBackupModal.tsx`'s
+write-scope-401 inline error path (the exact thing TESTING.md tells users to
+go check manually today). **Pages** (`src/pages/*`) are what's left with
+zero coverage.
 
 ### 5. Secrets-at-rest is minimal by design, not by accident
 
