@@ -39,6 +39,9 @@ exist for both of those gaps:
 
 ## Getting Started
 
+Just want to see it work? [TESTING.md](TESTING.md) - one script spins up
+a real demo and opens the web UI, no manual config required.
+
 1. [Installation](docs/03-getting-started/installation.md)
 2. [Quickstart](docs/03-getting-started/quickstart.md) - configure a host,
    run a backup, list snapshots, test a restore.
