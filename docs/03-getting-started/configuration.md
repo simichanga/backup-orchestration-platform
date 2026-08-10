@@ -44,7 +44,17 @@ ssh:
 
 # Metadata database
 metadata:
-  driver: sqlite             # "sqlite" or "postgres"
+  # "sqlite" (default, single-controller only - a local file, zero setup)
+  # or "postgres" (required for multi-controller HA, see
+  # docs/06-high-availability.md - every controller process needs to see
+  # the same jobs/snapshots/events tables, which a local SQLite file can't
+  # provide). A single-controller deployment can also point at Postgres if
+  # preferred; SQLite remains fully supported either way, this isn't a
+  # deprecation.
+  driver: sqlite
+  # sqlite: a filesystem path, or ":memory:" for tests.
+  # postgres: a standard connection string, e.g.
+  #   postgres://user:password@host:5432/dbname
   dsn: /var/lib/bop/metadata.db
   # How long persisted events (see docs/02-architecture.md#event-system)
   # are kept before a periodic background pruner deletes them. Unlike

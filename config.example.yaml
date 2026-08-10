@@ -38,6 +38,13 @@ metadata:
   driver: sqlite
   dsn: ./data/metadata.db
   event_retention: 720h
+  # Multi-controller HA (docs/06-high-availability.md) requires Postgres -
+  # every controller process needs to see the same jobs/snapshots/events
+  # tables, which a local SQLite file can't provide. Single-controller
+  # deployments can also point at Postgres if preferred; SQLite (above)
+  # remains fully supported either way. Swap in:
+  #   driver: postgres
+  #   dsn: "postgres://user:password@host:5432/dbname"
 
 # On by default here (unlike the production default) so the web UI works
 # right after `make run` - see docs/05-operations.md#http-api-and-web-ui.

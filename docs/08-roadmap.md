@@ -24,26 +24,33 @@ just try it out.
 
 ### 1. No multi-controller / HA story
 
-**Scoped 2026-08-10, ready to build - not started.** One controller, one
-SQLite file, one in-memory queue. Losing the controller host loses
-in-flight scheduling state until it's back (already-stored backups are
-unaffected - see
+**Milestone 1 of 2 shipped 2026-08-10.** One controller, one in-memory
+queue. Losing the controller host loses in-flight scheduling state until
+it's back (already-stored backups are unaffected - see
 [docs/05-operations.md](05-operations.md#known-operational-behavior-read-before-youre-paged)).
 [docs/06-high-availability.md](06-high-availability.md) is a complete
 design proposal (Postgres advisory-lock leader election, active-passive,
 a Postgres-backed shared queue table) - every open question it used to
-list is now decided (see that doc's "Decisions" section). This is
-confirmed as the next thing to build, ahead of out-of-process plugin
-loading below.
+list is decided (see that doc's "Decisions" section).
 
-Implementation is two milestones, in order: (1) `metadata.driver:
-postgres` on its own - a single-controller deployment against Postgres
-instead of SQLite, fully testable in isolation - then (2) leader election
-plus the shared queue table on top of that foundation. This is still the
-highest-stakes item on this list - it touches the metadata store, the
-queue, and the crash-recovery model - so treat each milestone as its own
-unit of work with its own verification against real infrastructure, not
-one large change.
+Implementation is two milestones, in order:
+
+1. **Done: `metadata.driver: postgres`.** A single-controller deployment
+   can now run against Postgres instead of SQLite - `internal/metadata`
+   (jackc/pgx/v5, pure Go, keeps `CGO_ENABLED=0` cross-compilation working)
+   and `internal/cli/wiring.go`. Verified against a real `postgres:16-
+   alpine` container: the full existing metadata test suite passes against
+   it (not a thinner Postgres-only smoke test), and a real `bop controller`
+   run against it correctly applied schema, reconciled queued jobs on
+   startup, and served reads/writes through the HTTP API. CI runs the same
+   suite against a Postgres service container on every push. SQLite
+   remains the default and is fully supported - this is opt-in.
+2. **Not started: leader election + the shared queue table.** Builds on
+   milestone 1's foundation. Still the highest-stakes remaining piece - it
+   touches the crash-recovery model and introduces the first genuinely
+   concurrent multi-process behavior in the codebase - treat it as its own
+   scoped unit of work with its own real-infrastructure verification, not
+   a continuation of milestone 1's commit.
 
 ### 2. Release & distribution
 

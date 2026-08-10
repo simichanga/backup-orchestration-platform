@@ -188,6 +188,17 @@ against.
    SQLite, fully testable on its own before anything about multi-
    controller behavior is built on top of it. Leader election and the
    shared queue table are the second step, once that foundation exists.
+   **Milestone 1 shipped 2026-08-10** - see `internal/metadata`
+   (`OpenPostgres`, jackc/pgx/v5, a dialect-aware `?`→`$N` rebind layer so
+   jobs.go/snapshots.go/events.go don't need two copies of every query) and
+   `internal/cli/wiring.go`. Verified against a real `postgres:16-alpine`
+   container, not just compiled: the entire existing metadata test suite
+   (not a thinner Postgres-only smoke test) passes against it, and a real
+   `bop controller` run against it correctly applied schema, reconciled
+   queued jobs on startup, ran the pipeline, and served reads/writes
+   through the HTTP API. CI now runs the same suite against a Postgres
+   service container on every push. Leader election and the shared queue
+   (milestone 2) have not started.
 4. **Shared queue: a PostgreSQL-backed queue table**, not NATS/Redis - see
    "Queue: in-memory → shared" above for the reasoning and the explicit
    note that this is a starting point, revisited only on a demonstrated

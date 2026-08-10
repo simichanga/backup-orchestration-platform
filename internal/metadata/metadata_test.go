@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -11,8 +12,33 @@ import (
 	"bop/internal/core"
 )
 
+// openTestStore is the one thing every test in this package goes through to
+// get a *Store - which backend it hands back is controlled entirely by
+// BOP_TEST_POSTGRES_DSN, so the exact same test suite (not a thinner
+// Postgres-only smoke test) exercises whichever backend is active. Default:
+// SQLite in-memory (no env var needed, works with zero setup). Set
+// BOP_TEST_POSTGRES_DSN to a real Postgres connection string (see
+// .github/workflows/ci.yml's postgres service for how CI does this) to run
+// the whole suite against Postgres instead.
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
+
+	if dsn := os.Getenv("BOP_TEST_POSTGRES_DSN"); dsn != "" {
+		s, err := OpenPostgres(dsn)
+		if err != nil {
+			t.Fatalf("OpenPostgres: %v", err)
+		}
+		// Tests assume an empty database at the start of each one - true by
+		// construction for SQLite's fresh ":memory:" DB per Open call, but
+		// Postgres is a real persistent server, so this has to be done
+		// explicitly for every test that opts into the Postgres backend.
+		if _, err := s.db.Exec("TRUNCATE TABLE jobs, snapshots, events RESTART IDENTITY"); err != nil {
+			t.Fatalf("truncate tables: %v", err)
+		}
+		t.Cleanup(func() { s.Close() })
+		return s
+	}
+
 	s, err := Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open: %v", err)

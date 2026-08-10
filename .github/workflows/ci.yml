@@ -9,6 +9,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Gives internal/metadata's own test suite (not a thinner Postgres-only
+    # smoke test - the exact same jobs/snapshots/events behavioral tests
+    # that run against SQLite by default) something real to run against, via
+    # BOP_TEST_POSTGRES_DSN below - see internal/metadata/metadata_test.go's
+    # openTestStore. A service container, not testcontainers-go, to avoid a
+    # new dependency for a single service this simple.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: bopuser
+          POSTGRES_PASSWORD: bopci
+          POSTGRES_DB: bop_metadata_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bopuser -d bop_metadata_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -59,6 +79,22 @@ jobs:
 
       # Runs on a real Linux runner with a C toolchain, catching data races
       # this project's Windows dev machine can't check locally (no cgo
-      # compiler there, so -race won't even build).
+      # compiler there, so -race won't even build). No BOP_TEST_POSTGRES_DSN
+      # here deliberately - internal/metadata/metadata_test.go's
+      # openTestStore picks a backend by that env var's presence, so this
+      # step is what keeps SQLite (the default every current user actually
+      # runs, and TestPruneEventsSubSecondBoundary/WholeSecondVsFractional's
+      # permanent modernc/sqlite regression guards) covered on every push.
       - name: Test (race detector)
         run: go test -race ./...
+
+      # A second pass of just internal/metadata against the postgres
+      # service above - proves the metadata.driver: postgres path
+      # (docs/06-high-availability.md's HA prerequisite) with the exact
+      # same behavioral suite the step above already ran against SQLite,
+      # not a thinner Postgres-only smoke test. Deliberately additive to
+      # the step above, not a replacement for it - see that step's comment.
+      - name: Test metadata against Postgres
+        env:
+          BOP_TEST_POSTGRES_DSN: postgres://bopuser:bopci@localhost:5432/bop_metadata_test?sslmode=disable
+        run: go test -race ./internal/metadata/...

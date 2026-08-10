@@ -17,7 +17,7 @@ var ErrJobNotFound = errors.New("metadata: job not found")
 // marked core.JobStatusQueued, before handing it to a Queue - see the
 // package doc and internal/queue's Queue contract.
 func (s *Store) CreateJob(ctx context.Context, job core.Job) error {
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.exec(ctx, `
 		INSERT INTO jobs (id, host, plugin, status, retention_daily, retention_weekly, retention_monthly, retention_yearly, queued_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Host, job.Plugin, job.Status,
@@ -32,7 +32,7 @@ func (s *Store) CreateJob(ctx context.Context, job core.Job) error {
 
 // UpdateJobStatus transitions a job to a new status.
 func (s *Store) UpdateJobStatus(ctx context.Context, id string, status core.JobStatus) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?`,
+	res, err := s.exec(ctx, `UPDATE jobs SET status = ?, updated_at = ? WHERE id = ?`,
 		status, time.Now().UTC(), id)
 	if err != nil {
 		return fmt.Errorf("metadata: update job %s: %w", id, err)
@@ -50,7 +50,7 @@ func (s *Store) UpdateJobStatus(ctx context.Context, id string, status core.JobS
 // GetJob retrieves a job by ID.
 func (s *Store) GetJob(ctx context.Context, id string) (core.Job, error) {
 	var job core.Job
-	err := s.db.QueryRowContext(ctx, `
+	err := s.queryRow(ctx, `
 		SELECT id, host, plugin, status, retention_daily, retention_weekly, retention_monthly, retention_yearly, queued_at
 		FROM jobs WHERE id = ?`, id,
 	).Scan(&job.ID, &job.Host, &job.Plugin, &job.Status,
@@ -71,7 +71,7 @@ func (s *Store) GetJob(ctx context.Context, id string) (core.Job, error) {
 // CreateJob and Enqueue, or a previous run's ErrQueueFull) - see the
 // durability contract documented on the Queue interface.
 func (s *Store) ListJobsByStatus(ctx context.Context, status core.JobStatus) ([]core.Job, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx, `
 		SELECT id, host, plugin, status, retention_daily, retention_weekly, retention_monthly, retention_yearly, queued_at
 		FROM jobs WHERE status = ? ORDER BY queued_at`, status,
 	)
@@ -101,7 +101,7 @@ func (s *Store) ListJobsByStatus(ctx context.Context, status core.JobStatus) ([]
 // oldest-first to process in queue order), this is for read access to full
 // job history - the API's GET /v1/jobs.
 func (s *Store) ListJobs(ctx context.Context) ([]core.Job, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx, `
 		SELECT id, host, plugin, status, retention_daily, retention_weekly, retention_monthly, retention_yearly, queued_at
 		FROM jobs ORDER BY queued_at DESC`,
 	)
@@ -131,7 +131,7 @@ func (s *Store) ListJobs(ctx context.Context) ([]core.Job, error) {
 // default, in-flight jobs from a previous run are not resumed. Returns the
 // number of jobs marked failed.
 func (s *Store) FailOrphanedJobs(ctx context.Context) (int, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE jobs SET status = ?, updated_at = ? WHERE status = ?`,
+	res, err := s.exec(ctx, `UPDATE jobs SET status = ?, updated_at = ? WHERE status = ?`,
 		core.JobStatusFailed, time.Now().UTC(), core.JobStatusInProgress)
 	if err != nil {
 		return 0, fmt.Errorf("metadata: fail orphaned jobs: %w", err)

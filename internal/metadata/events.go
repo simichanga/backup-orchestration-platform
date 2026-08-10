@@ -20,7 +20,7 @@ func (s *Store) RecordEvent(ctx context.Context, e events.Event) error {
 	if err != nil {
 		return fmt.Errorf("metadata: marshal event fields: %w", err)
 	}
-	_, err = s.db.ExecContext(ctx, `
+	_, err = s.exec(ctx, `
 		INSERT INTO events (type, job_id, host, plugin, resource, fields, timestamp)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		e.Type, e.JobID, e.Host, e.Plugin, e.Resource, string(fields), e.Timestamp,
@@ -32,9 +32,10 @@ func (s *Store) RecordEvent(ctx context.Context, e events.Event) error {
 }
 
 // EventFilter narrows ListEventsPage's results. A zero-value JobID/Host
-// means "no filter" on that field. Limit <= 0 means no limit, using
-// SQLite's own `LIMIT -1` convention rather than a magic sentinel BOP
-// invents itself.
+// means "no filter" on that field. Limit <= 0 means no limit - the LIMIT
+// clause is omitted entirely in that case, rather than relying on SQLite's
+// `LIMIT -1` convention, which Postgres doesn't share (it wants `LIMIT ALL`
+// or, as here, no clause at all).
 type EventFilter struct {
 	JobID string
 	Host  string
@@ -64,14 +65,13 @@ func (s *Store) ListEventsPage(ctx context.Context, filter EventFilter) ([]event
 		query += " AND host = ?"
 		args = append(args, filter.Host)
 	}
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = -1
+	query += " ORDER BY timestamp DESC"
+	if filter.Limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, filter.Limit)
 	}
-	query += " ORDER BY timestamp DESC LIMIT ?"
-	args = append(args, limit)
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("metadata: list events: %w", err)
 	}
@@ -100,7 +100,7 @@ func (s *Store) ListEventsPage(ctx context.Context, filter EventFilter) ([]event
 // then periodically (see internal/cli's event pruner) so the events table
 // doesn't grow unbounded across a long-running controller's uptime.
 func (s *Store) PruneEventsOlderThan(ctx context.Context, cutoff time.Time) (int, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE timestamp < ?`, cutoff)
+	res, err := s.exec(ctx, `DELETE FROM events WHERE timestamp < ?`, cutoff)
 	if err != nil {
 		return 0, fmt.Errorf("metadata: prune events: %w", err)
 	}

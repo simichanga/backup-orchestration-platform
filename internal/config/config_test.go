@@ -272,6 +272,18 @@ metadata:
   event_retention: 0s
 `,
 		},
+		{
+			name: "unsupported metadata driver",
+			yaml: `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+metadata:
+  driver: mysql
+`,
+		},
 	}
 
 	for _, tt := range tests {

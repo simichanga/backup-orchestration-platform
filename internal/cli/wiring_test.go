@@ -20,7 +20,15 @@ func writeTestFile(t *testing.T, dir, name, contents string) string {
 	return path
 }
 
-func TestBuildAppRejectsUnsupportedMetadataDriver(t *testing.T) {
+// TestBuildAppPostgresConnectionFailureIsCleanAndRedacted covers what used
+// to be TestBuildAppRejectsUnsupportedMetadataDriver, retired now that
+// metadata.driver: postgres is real (internal/config's own
+// TestLoadValidationErrors covers a genuinely unsupported driver name,
+// which config.Load rejects before buildApp is ever reached). What's worth
+// testing here instead: a real Postgres connection failure (host
+// unreachable, not a config typo) must surface as a clean error through
+// buildApp, and must never leak the DSN's password into that error.
+func TestBuildAppPostgresConnectionFailureIsCleanAndRedacted(t *testing.T) {
 	dir := t.TempDir()
 	invPath := writeTestFile(t, dir, "inventory.yaml", `
 servers:
@@ -40,12 +48,18 @@ storage:
     password_file: /etc/bop/restic-password.txt
 metadata:
   driver: postgres
-  dsn: ":memory:"
+  dsn: "postgres://bopuser:s3cret-password@127.0.0.1:1/bop?connect_timeout=2"
 `)
 
 	_, err := buildApp(cfgPath)
-	if err == nil || !strings.Contains(err.Error(), "metadata.driver") {
-		t.Errorf("buildApp with metadata.driver=postgres: err = %v, want a metadata.driver error", err)
+	if err == nil {
+		t.Fatalf("buildApp against an unreachable Postgres: expected an error, got nil")
+	}
+	if strings.Contains(err.Error(), "s3cret-password") {
+		t.Errorf("buildApp error leaked the DSN password: %v", err)
+	}
+	if !strings.Contains(err.Error(), "open metadata store") {
+		t.Errorf("buildApp error = %v, want it to mention opening the metadata store", err)
 	}
 }
 

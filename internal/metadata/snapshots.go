@@ -9,7 +9,7 @@ import (
 
 // RecordSnapshot persists a stored artifact's metadata.
 func (s *Store) RecordSnapshot(ctx context.Context, snap core.Snapshot) error {
-	_, err := s.db.ExecContext(ctx, `
+	_, err := s.exec(ctx, `
 		INSERT INTO snapshots (id, job_id, host, plugin, size, checksum, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		snap.ID, snap.JobID, snap.Host, snap.Plugin, snap.Size, snap.Checksum, snap.CreatedAt,
@@ -22,7 +22,7 @@ func (s *Store) RecordSnapshot(ctx context.Context, snap core.Snapshot) error {
 
 // ListSnapshots returns all snapshots for a host, most recent first.
 func (s *Store) ListSnapshots(ctx context.Context, host string) ([]core.Snapshot, error) {
-	rows, err := s.db.QueryContext(ctx, `
+	rows, err := s.query(ctx, `
 		SELECT id, job_id, host, plugin, size, checksum, created_at
 		FROM snapshots WHERE host = ? ORDER BY created_at DESC`, host)
 	if err != nil {

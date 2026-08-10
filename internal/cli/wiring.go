@@ -49,10 +49,11 @@ func (a *app) Close() error {
 
 // buildApp loads config.yaml and inventory.yaml, opens the metadata store,
 // constructs the storage provider and controller, and registers all
-// available plugins. Only sqlite (metadata) and restic (storage) are
-// implemented so far, despite both being documented as configurable -
-// buildApp fails clearly on any other configured value rather than
-// pretending to support it.
+// available plugins. Only restic (storage) is unconditionally supported -
+// metadata now has two real drivers (sqlite, postgres; postgres is the
+// documented prerequisite for multi-controller HA, see
+// docs/06-high-availability.md) - buildApp fails clearly on any other
+// configured value rather than pretending to support it.
 func buildApp(configPath string) (*app, error) {
 	cfg, err := config.Load(configPath, nil)
 	if err != nil {
@@ -67,10 +68,15 @@ func buildApp(configPath string) (*app, error) {
 		return nil, fmt.Errorf("load inventory: %w", err)
 	}
 
-	if cfg.Metadata.Driver != "sqlite" {
-		return nil, fmt.Errorf("metadata.driver %q is not yet implemented (only sqlite)", cfg.Metadata.Driver)
+	var md *metadata.Store
+	switch cfg.Metadata.Driver {
+	case "sqlite":
+		md, err = metadata.Open(cfg.Metadata.DSN)
+	case "postgres":
+		md, err = metadata.OpenPostgres(cfg.Metadata.DSN)
+	default:
+		return nil, fmt.Errorf("metadata.driver %q is not yet implemented (only sqlite, postgres)", cfg.Metadata.Driver)
 	}
-	md, err := metadata.Open(cfg.Metadata.DSN)
 	if err != nil {
 		return nil, fmt.Errorf("open metadata store: %w", err)
 	}
