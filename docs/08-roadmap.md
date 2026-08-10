@@ -24,24 +24,26 @@ just try it out.
 
 ### 1. No multi-controller / HA story
 
-One controller, one SQLite file, one in-memory queue. Losing the
-controller host loses in-flight scheduling state until it's back (already
--stored backups are unaffected - see
+**Scoped 2026-08-10, ready to build - not started.** One controller, one
+SQLite file, one in-memory queue. Losing the controller host loses
+in-flight scheduling state until it's back (already-stored backups are
+unaffected - see
 [docs/05-operations.md](05-operations.md#known-operational-behavior-read-before-youre-paged)).
 [docs/06-high-availability.md](06-high-availability.md) is a complete
-design proposal (Postgres advisory-lock leader election, active-passive)
-with three open questions still unanswered:
-- Priority relative to out-of-process plugin loading (below).
-- Whether the SQLite→Postgres metadata migration should ship as its own
-  step ahead of HA, or bundled with it.
-- Whether a shared queue (NATS/Redis, or a Postgres table) is needed on
-  day one of HA, or whether a single active writer can keep the
-  in-memory queue for longer than expected.
+design proposal (Postgres advisory-lock leader election, active-passive,
+a Postgres-backed shared queue table) - every open question it used to
+list is now decided (see that doc's "Decisions" section). This is
+confirmed as the next thing to build, ahead of out-of-process plugin
+loading below.
 
-This is the highest-stakes item on this list - it touches the metadata
-store, the queue, and the crash-recovery model - and per standing
-project policy needs a fresh scoping round before any code is written,
-regardless of how much autonomy is granted going into that session.
+Implementation is two milestones, in order: (1) `metadata.driver:
+postgres` on its own - a single-controller deployment against Postgres
+instead of SQLite, fully testable in isolation - then (2) leader election
+plus the shared queue table on top of that foundation. This is still the
+highest-stakes item on this list - it touches the metadata store, the
+queue, and the crash-recovery model - so treat each milestone as its own
+unit of work with its own verification against real infrastructure, not
+one large change.
 
 ### 2. Release & distribution
 
@@ -98,11 +100,11 @@ may turn out to need nothing new).
 
 [docs/07-out-of-process-plugins.md](07-out-of-process-plugins.md) is a
 complete design proposal (subprocess + gRPC, the HashiCorp go-plugin
-pattern, minisign-based signing) with three open questions:
+pattern, minisign-based signing) with two open questions left (priority
+relative to HA is now decided - HA is next, see above):
 - minisign vs. cosign/GPG for signing.
 - Whether a bad signature should block `bop controller` startup entirely
   or just skip that one plugin.
-- Priority relative to HA (above).
 
 Also needs a fresh scoping round before any code - same standing policy
 as HA.

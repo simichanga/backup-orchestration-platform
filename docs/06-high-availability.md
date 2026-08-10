@@ -1,11 +1,14 @@
 # Multi-Controller / High Availability (Proposal)
 
-**Status: proposal, not implemented.** This is a design doc, not a spec of
-shipped behavior - written the same way `docs/01-introduction.md` and
-`docs/02-architecture.md` preceded Phase 1's code, per this project's
+**Status: scoped, not implemented (2026-08-10).** This is a design doc, not
+a spec of shipped behavior - written the same way `docs/01-introduction.md`
+and `docs/02-architecture.md` preceded Phase 1's code, per this project's
 docs-first practice. Nothing in this file should be treated as true of the
-current codebase. It exists to have something concrete to react to before
-any of it gets built; see the open questions at the end.
+current codebase. Every open question below has now been decided (see
+"Decisions" at the end) - implementation hasn't started, but this doc is no
+longer blocked on unresolved design choices. Per this project's standing
+policy, code doesn't start until then; this scoping round is what unblocks
+it.
 
 ## The problem, precisely
 
@@ -67,14 +70,25 @@ process needs to see the same jobs/snapshots/events tables.
 
 ### Queue: in-memory → shared
 
-Also anticipated: `internal/queue/queue.go`'s doc comment already says
-"later phases can swap in a shared queue (NATS, Redis) for multi-controller
-deployments without changing this interface or its callers." This proposal
-doesn't relitigate that choice. One addition worth flagging: a shared
-queue is necessary but not sufficient by itself - see leader election
-below for why "multiple consumers pulling from one shared queue" is *not*
-the model being proposed here, even though NATS/Redis could technically
-support it.
+**Decided: a PostgreSQL-backed queue table** (`SELECT ... FOR UPDATE SKIP
+LOCKED` against a `jobs_queue`-style table), not NATS or Redis. HA already
+requires Postgres for the metadata store and leader election (below) - a
+queue table adds zero new infrastructure, and gets transactional
+consistency with the metadata store for free: the existing job-durability
+contract ("a job must be persisted as `queued` before `Queue.Enqueue`",
+see `internal/queue`'s doc comment) can become a single transaction
+instead of two systems that must be kept in sync by convention. Throughput
+ceiling is a non-issue - single-serial-consumer means only one job runs at
+a time regardless of queue backend, so a real broker's extra headroom goes
+unused.
+
+This is explicitly a **starting point, not a permanent ceiling**: if BOP
+ever demonstrates a concrete need for broker features this table doesn't
+give it (pub/sub fan-out, replay, an active-active model), NATS or Redis
+remain the documented fallback - `internal/queue.Queue`'s interface was
+already designed for exactly this kind of swap without changing callers.
+Not a decision to revisit speculatively; only on a demonstrated need, same
+posture as active-active itself (see "Explicitly out of scope," below).
 
 ## Leader election
 
@@ -106,10 +120,14 @@ Mechanics:
   requests on the HTTP API and `/metrics` from the shared Postgres-backed
   metadata store, regardless of leadership - only scheduling/dispatch/
   consumption is leader-exclusive. This gives useful read-path redundancy
-  "for free," not just failover for writes. `POST /v1/backups` on a
-  standby should be rejected (503, "not the leader, retry against the
-  active controller") or transparently proxied to the current leader - an
-  open question below.
+  "for free," not just failover for writes. **Decided: `POST /v1/backups`
+  on a standby is rejected**, not proxied - a plain 503 ("not the leader,
+  retry against the active controller"). A standby doesn't need to
+  discover or track the current leader's address, or handle that address
+  changing across a failover; a client that wants to retry can just try a
+  different controller instance, the same way any HA-aware client already
+  has to handle "this replica isn't the primary" for a database. Simple
+  over clever, consistent with this project's other choices throughout.
 
 Failover time is bounded by two knobs: how often standbys retry
 `pg_try_advisory_lock` (proposed default: 5s) and how quickly Postgres
@@ -151,20 +169,28 @@ true is "only the leader ever runs `forget --prune`," which falls out of
   single-controller SQLite deployments are unaffected and remain fully
   supported; nothing here deprecates that path.
 
-## Open questions (need a decision before implementation starts)
+## Decisions (2026-08-10 scoping round)
 
-1. Does a standby reject `POST /v1/backups` with a clear "not the leader"
-   error, or transparently proxy it to whichever process currently holds
-   the lock? Proxying is friendlier but adds real complexity (the standby
-   needs to know the leader's address, not just that it isn't one).
-2. Is PostgreSQL an acceptable new *required* dependency for anyone who
-   wants HA, or does that need to stay optional somehow (e.g. keep SQLite
-   viable for a lighter-weight HA story)? This proposal assumes requiring
-   Postgres is fine since it's already the stated metadata direction, but
-   that's worth confirming explicitly rather than assuming.
-3. NATS vs. Redis vs. a Postgres-backed queue table (`SELECT ... FOR
-   UPDATE SKIP LOCKED`) for the shared queue - existing docs lean
-   NATS/Redis; a Postgres-backed queue would mean zero *additional*
-   dependencies beyond what leader election already needs, at the cost of
-   less throughput/feature headroom than a real broker. Worth an explicit
-   choice, not an assumption.
+Every open question this proposal previously listed has been decided.
+Nothing below is provisional - this is what implementation should build
+against.
+
+1. **Priority: HA is next.** Confirmed ahead of out-of-process plugin
+   loading (`docs/07-out-of-process-plugins.md`), which stays a written-
+   but-unscheduled proposal until this ships.
+2. **PostgreSQL is a required, not optional, new dependency for anyone
+   using HA.** Single-controller SQLite deployments are unaffected and
+   remain fully supported - this only applies to opt-in multi-controller
+   mode. No lighter-weight SQLite-based HA story is planned.
+3. **Implementation sequencing: `metadata.driver: postgres` ships as its
+   own standalone step first**, before leader election or the shared
+   queue - a single-controller deployment pointed at Postgres instead of
+   SQLite, fully testable on its own before anything about multi-
+   controller behavior is built on top of it. Leader election and the
+   shared queue table are the second step, once that foundation exists.
+4. **Shared queue: a PostgreSQL-backed queue table**, not NATS/Redis - see
+   "Queue: in-memory → shared" above for the reasoning and the explicit
+   note that this is a starting point, revisited only on a demonstrated
+   need for broker features.
+5. **A standby rejects `POST /v1/backups`** with a 503, rather than
+   proxying to the leader - see "Leader election" above.
