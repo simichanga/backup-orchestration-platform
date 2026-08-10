@@ -1,3 +1,4 @@
+import { MotionConfig } from 'framer-motion'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
 import { ConnectPage } from './pages/ConnectPage'
@@ -31,10 +32,16 @@ function Router() {
 
 export function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <Router />
-      </AuthProvider>
-    </BrowserRouter>
+    // reducedMotion="user" makes every animation in the app - here and in
+    // any motion.* component below it - respect the OS-level "reduce
+    // motion" preference automatically, without each component checking
+    // it individually.
+    <MotionConfig reducedMotion="user">
+      <BrowserRouter>
+        <AuthProvider>
+          <Router />
+        </AuthProvider>
+      </BrowserRouter>
+    </MotionConfig>
   )
 }

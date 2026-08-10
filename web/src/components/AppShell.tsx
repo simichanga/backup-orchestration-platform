@@ -1,4 +1,6 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { useAuth } from '../state/auth'
 import styles from './AppShell.module.css'
 
@@ -12,6 +14,8 @@ const NAV_ITEMS = [
 
 export function AppShell() {
   const { disconnect } = useAuth()
+  const location = useLocation()
+  const reduceMotion = usePrefersReducedMotion()
 
   return (
     <div className={styles.shell}>
@@ -37,12 +41,33 @@ export function AppShell() {
               end={item.end}
               className={({ isActive }) => `${styles.navLink} ${isActive ? styles.navLinkActive : ''}`}
             >
-              {item.label}
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <motion.span
+                      layoutId="nav-active-indicator"
+                      className={styles.navIndicator}
+                      transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 40 }}
+                    />
+                  )}
+                  <span className={styles.navLabel}>{item.label}</span>
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
         <main className={styles.main}>
-          <Outlet />
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={location.pathname}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={reduceMotion ? { duration: 0 } : { duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <Outlet />
+            </motion.div>
+          </AnimatePresence>
         </main>
       </div>
     </div>

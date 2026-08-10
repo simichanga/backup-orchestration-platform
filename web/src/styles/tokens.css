@@ -78,6 +78,16 @@
   --danger: var(--rust-500);
   --danger-strong: var(--rust-400);
   --focus-ring: var(--brass-400);
+
+  /* Chart marks are deliberately more saturated than the UI's muted brass/
+     sage/rust - validated with the dataviz skill's palette checker
+     (lightness band, chroma floor, CVD separation, contrast vs surface) at
+     these exact values against this exact dark surface. Don't reuse
+     --accent/--success/--danger for chart fills; they read as gray at
+     data-ink sizes even though they read fine as UI accents. */
+  --chart-active: #b3801e;
+  --chart-succeeded: #4f9c58;
+  --chart-failed: #c4512e;
 }
 
 @media (prefers-color-scheme: light) {
@@ -97,6 +107,9 @@
     --danger: var(--rust-600);
     --danger-strong: var(--rust-500);
     --focus-ring: var(--brass-600);
+    --chart-active: #96650f;
+    --chart-succeeded: #3d7d46;
+    --chart-failed: #a83f21;
   }
 }
 
@@ -116,6 +129,9 @@
   --danger: var(--rust-600);
   --danger-strong: var(--rust-500);
   --focus-ring: var(--brass-600);
+  --chart-active: #96650f;
+  --chart-succeeded: #3d7d46;
+  --chart-failed: #a83f21;
 }
 
 :root[data-theme='dark'] {
@@ -134,4 +150,7 @@
   --danger: var(--rust-500);
   --danger-strong: var(--rust-400);
   --focus-ring: var(--brass-400);
+  --chart-active: #b3801e;
+  --chart-succeeded: #4f9c58;
+  --chart-failed: #c4512e;
 }

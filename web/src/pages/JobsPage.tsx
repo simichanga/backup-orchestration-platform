@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
@@ -6,10 +7,14 @@ import { StatusPill } from '../components/StatusPill'
 import { TriggerBackupModal } from '../components/TriggerBackupModal'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { formatRelative } from '../lib/format'
+import { staggerTransition } from '../lib/motion'
 import type { JobStatus } from '../api/types'
 import controls from '../styles/controls.module.css'
 import table from '../styles/table.module.css'
+
+const POLL_MS = 5000
 
 const STATUS_OPTIONS: { value: JobStatus | ''; label: string }[] = [
   { value: '', label: 'All statuses' },
@@ -21,9 +26,10 @@ const STATUS_OPTIONS: { value: JobStatus | ''; label: string }[] = [
 
 export function JobsPage() {
   const [status, setStatus] = useState<JobStatus | ''>('')
-  const jobsState = useApi(() => api.listJobs(status || undefined), [status])
+  const jobsState = useApi(() => api.listJobs(status || undefined), [status], POLL_MS)
   const hostsState = useApi(() => api.listHosts(), [])
   const [showTrigger, setShowTrigger] = useState(false)
+  const reduceMotion = usePrefersReducedMotion()
 
   const jobs = [...(jobsState.data ?? [])].sort((a, b) => b.queuedAt.localeCompare(a.queuedAt))
 
@@ -66,8 +72,8 @@ export function JobsPage() {
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job) => (
-                <tr key={job.id}>
+              {jobs.map((job, i) => (
+                <motion.tr key={job.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={staggerTransition(reduceMotion, i)}>
                   <td>
                     <Link to={`/jobs/${encodeURIComponent(job.id)}`}>{job.host}</Link>
                   </td>
@@ -76,22 +82,21 @@ export function JobsPage() {
                     <StatusPill status={job.status} />
                   </td>
                   <td className={table.mono}>{formatRelative(job.queuedAt)}</td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {showTrigger && hostsState.data && (
-        <TriggerBackupModal
-          hosts={hostsState.data}
-          onClose={() => {
-            setShowTrigger(false)
-            jobsState.reload()
-          }}
-        />
-      )}
+      <TriggerBackupModal
+        open={showTrigger}
+        hosts={hostsState.data ?? []}
+        onClose={() => {
+          setShowTrigger(false)
+          jobsState.reload()
+        }}
+      />
     </>
   )
 }

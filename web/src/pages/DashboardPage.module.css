@@ -12,6 +12,14 @@
   background: var(--surface);
 }
 
+.activitySection {
+  margin-bottom: var(--space-7);
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
 .statAlert {
   border-color: var(--danger);
 }

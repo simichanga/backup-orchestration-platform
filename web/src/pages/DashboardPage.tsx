@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { motion } from 'framer-motion'
+import { lazy, Suspense, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { PageHeader } from '../components/Page'
@@ -6,16 +7,32 @@ import { StatusPill } from '../components/StatusPill'
 import { TriggerBackupModal } from '../components/TriggerBackupModal'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
+import { bucketJobsByDay } from '../lib/activity'
 import { formatRelative } from '../lib/format'
+import { staggerTransition } from '../lib/motion'
 import controls from '../styles/controls.module.css'
 import table from '../styles/table.module.css'
 import styles from './DashboardPage.module.css'
 
+const ACTIVITY_WINDOW_DAYS = 14
+
+// Recharts is a meaningful chunk of bundle weight for a chart that only
+// exists on this one page - load it lazily rather than paying for it on
+// every route (Jobs/Snapshots/Events never need it).
+const ActivityChart = lazy(() => import('../components/ActivityChart').then((m) => ({ default: m.ActivityChart })))
+
+// Fleet status is exactly the kind of view where "reload to see if
+// anything changed" is the wrong default - 5s is fast enough that a
+// queued job visibly starts and finishes without a manual refresh.
+const POLL_MS = 5000
+
 export function DashboardPage() {
   const hostsState = useApi(() => api.listHosts(), [])
-  const jobsState = useApi(() => api.listJobs(), [])
-  const eventsState = useApi(() => api.listEvents({ limit: 8 }), [])
+  const jobsState = useApi(() => api.listJobs(), [], POLL_MS)
+  const eventsState = useApi(() => api.listEvents({ limit: 8 }), [], POLL_MS)
   const [showTrigger, setShowTrigger] = useState(false)
+  const reduceMotion = usePrefersReducedMotion()
 
   const stats = useMemo(() => {
     const jobs = jobsState.data ?? []
@@ -30,6 +47,8 @@ export function DashboardPage() {
     () => [...(jobsState.data ?? [])].sort((a, b) => b.queuedAt.localeCompare(a.queuedAt)).slice(0, 8),
     [jobsState.data],
   )
+
+  const activity = useMemo(() => bucketJobsByDay(jobsState.data ?? [], ACTIVITY_WINDOW_DAYS), [jobsState.data])
 
   return (
     <>
@@ -58,6 +77,17 @@ export function DashboardPage() {
         </div>
       </div>
 
+      <section className={styles.activitySection}>
+        <h2 className={styles.sectionTitle}>Activity, last {ACTIVITY_WINDOW_DAYS} days</h2>
+        {jobsState.loading ? (
+          <Loading label="Loading activity" />
+        ) : (
+          <Suspense fallback={<Loading label="Loading chart" />}>
+            <ActivityChart data={activity} />
+          </Suspense>
+        )}
+      </section>
+
       <div className={styles.columns}>
         <section>
           <h2 className={styles.sectionTitle}>Recent jobs</h2>
@@ -76,8 +106,8 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {recentJobs.map((job) => (
-                    <tr key={job.id}>
+                  {recentJobs.map((job, i) => (
+                    <motion.tr key={job.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={staggerTransition(reduceMotion, i)}>
                       <td>
                         <Link to={`/jobs/${encodeURIComponent(job.id)}`} className={styles.rowLink}>
                           {job.host}
@@ -88,7 +118,7 @@ export function DashboardPage() {
                         <StatusPill status={job.status} />
                       </td>
                       <td className={table.mono}>{formatRelative(job.queuedAt)}</td>
-                    </tr>
+                    </motion.tr>
                   ))}
                 </tbody>
               </table>
@@ -104,27 +134,26 @@ export function DashboardPage() {
           {eventsState.data && eventsState.data.length > 0 && (
             <ul className={styles.feed}>
               {eventsState.data.map((event, i) => (
-                <li key={i} className={styles.feedItem}>
+                <motion.li key={i} className={styles.feedItem} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={staggerTransition(reduceMotion, i)}>
                   <span className={styles.feedType}>{event.type}</span>
                   <span className={styles.feedMeta}>
                     {event.host} · {formatRelative(event.timestamp)}
                   </span>
-                </li>
+                </motion.li>
               ))}
             </ul>
           )}
         </section>
       </div>
 
-      {showTrigger && hostsState.data && (
-        <TriggerBackupModal
-          hosts={hostsState.data}
-          onClose={() => {
-            setShowTrigger(false)
-            jobsState.reload()
-          }}
-        />
-      )}
+      <TriggerBackupModal
+        open={showTrigger}
+        hosts={hostsState.data ?? []}
+        onClose={() => {
+          setShowTrigger(false)
+          jobsState.reload()
+        }}
+      />
     </>
   )
 }

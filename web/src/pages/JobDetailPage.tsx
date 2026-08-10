@@ -9,10 +9,16 @@ import { useApi } from '../hooks/useApi'
 import { formatExact, formatRelative } from '../lib/format'
 import styles from './JobDetailPage.module.css'
 
+const POLL_MS = 5000
+
 export function JobDetailPage() {
   const { id = '' } = useParams()
-  const jobState = useApi(() => api.getJob(id), [id])
-  const eventsState = useApi(() => api.listEvents({ jobId: id, limit: 200 }), [id])
+  // A single job is a cheap enough GET to just always poll while this
+  // page is open - the bigger win is below, where the events poll stops
+  // once there's nothing left to watch for.
+  const jobState = useApi(() => api.getJob(id), [id], POLL_MS)
+  const isTerminal = jobState.data?.status === 'completed' || jobState.data?.status === 'failed'
+  const eventsState = useApi(() => api.listEvents({ jobId: id, limit: 200 }), [id], isTerminal ? undefined : POLL_MS)
 
   const tier = useMemo(() => sealTierForEvents(eventsState.data ?? []), [eventsState.data])
   const events = useMemo(() => [...(eventsState.data ?? [])].sort((a, b) => a.timestamp.localeCompare(b.timestamp)), [eventsState.data])

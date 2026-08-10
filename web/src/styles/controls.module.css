@@ -29,11 +29,15 @@
   font-weight: 600;
   font-size: var(--step--1);
   cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-out);
+  transition: background var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
 }
 
 .button:hover:not(:disabled) {
   background: var(--accent-strong);
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .button:disabled {

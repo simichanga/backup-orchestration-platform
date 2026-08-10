@@ -1,15 +1,19 @@
+import { motion } from 'framer-motion'
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { PageHeader } from '../components/Page'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { formatBytes, formatExact, formatRelative } from '../lib/format'
+import { staggerTransition } from '../lib/motion'
 import controls from '../styles/controls.module.css'
 import table from '../styles/table.module.css'
 
 export function SnapshotsPage() {
   const hostsState = useApi(() => api.listHosts(), [])
   const [host, setHost] = useState('')
+  const reduceMotion = usePrefersReducedMotion()
 
   useEffect(() => {
     if (!host && hostsState.data?.length) setHost(hostsState.data[0].name)
@@ -48,8 +52,8 @@ export function SnapshotsPage() {
               </tr>
             </thead>
             <tbody>
-              {snapshotsState.data.map((snap) => (
-                <tr key={snap.id}>
+              {snapshotsState.data.map((snap, i) => (
+                <motion.tr key={snap.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={staggerTransition(reduceMotion, i)}>
                   <td className={table.mono}>{snap.plugin}</td>
                   <td className={table.mono}>{formatBytes(snap.size)}</td>
                   <td className={table.mono} title={snap.checksum}>
@@ -58,7 +62,7 @@ export function SnapshotsPage() {
                   <td className={table.mono} title={formatExact(snap.createdAt)}>
                     {formatRelative(snap.createdAt)}
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>

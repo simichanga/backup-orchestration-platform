@@ -1,10 +1,13 @@
+import { motion } from 'framer-motion'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { PageHeader } from '../components/Page'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
 import { useApi } from '../hooks/useApi'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import { formatExact, formatRelative } from '../lib/format'
+import { staggerTransition } from '../lib/motion'
 import controls from '../styles/controls.module.css'
 import table from '../styles/table.module.css'
 
@@ -13,6 +16,7 @@ export function EventsPage() {
   const [jobId, setJobId] = useState('')
   const [appliedHost, setAppliedHost] = useState('')
   const [appliedJobId, setAppliedJobId] = useState('')
+  const reduceMotion = usePrefersReducedMotion()
 
   const eventsState = useApi(
     () => api.listEvents({ host: appliedHost || undefined, jobId: appliedJobId || undefined, limit: 200 }),
@@ -58,7 +62,7 @@ export function EventsPage() {
             </thead>
             <tbody>
               {eventsState.data.map((event, i) => (
-                <tr key={i}>
+                <motion.tr key={i} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={staggerTransition(reduceMotion, i)}>
                   <td className={table.mono}>{event.type}</td>
                   <td>{event.host || '—'}</td>
                   <td className={table.mono}>
@@ -67,7 +71,7 @@ export function EventsPage() {
                   <td className={table.mono} title={formatExact(event.timestamp)}>
                     {formatRelative(event.timestamp)}
                   </td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>

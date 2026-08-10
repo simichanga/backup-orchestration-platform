@@ -63,12 +63,12 @@
 }
 
 .navLink {
+  position: relative;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   font-size: var(--step--1);
   color: var(--text-muted);
   text-decoration: none;
-  border-left: 2px solid transparent;
   transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
 
@@ -79,8 +79,24 @@
 
 .navLinkActive {
   color: var(--accent-strong);
-  border-left-color: var(--accent);
   background: var(--surface);
+}
+
+.navLabel {
+  position: relative;
+}
+
+/* The active indicator is a motion.span sharing layoutId="nav-active-
+   indicator" across every render - framer-motion animates it sliding
+   between nav items on route change instead of it just appearing. */
+.navIndicator {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--accent);
+  border-radius: 1px;
 }
 
 .main {
@@ -104,9 +120,13 @@
     padding: var(--space-2);
   }
 
-  .navLinkActive {
-    border-left-color: transparent;
-    border-bottom: 2px solid var(--accent);
+  .navIndicator {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 2px;
   }
 
   .main {

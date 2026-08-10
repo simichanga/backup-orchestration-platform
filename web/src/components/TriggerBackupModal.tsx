@@ -1,20 +1,36 @@
-import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ApiError, api } from '../api/client'
 import type { Host } from '../api/types'
+import { usePrefersReducedMotion } from '../hooks/usePrefersReducedMotion'
 import styles from './TriggerBackupModal.module.css'
 
-export function TriggerBackupModal({ hosts, onClose }: { hosts: Host[]; onClose: () => void }) {
+export function TriggerBackupModal({ open, hosts, onClose }: { open: boolean; hosts: Host[]; onClose: () => void }) {
   const [host, setHost] = useState(hosts[0]?.name ?? '')
   const [plugin, setPlugin] = useState(hosts[0]?.plugins[0] ?? '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [queuedJobId, setQueuedJobId] = useState<string | null>(null)
-  const dialogRef = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
+  const reduceMotion = usePrefersReducedMotion()
 
   const selectedHost = hosts.find((h) => h.name === host)
   const plugins = selectedHost?.plugins ?? []
+
+  // The dialog now stays mounted (AnimatePresence needs that to animate
+  // the exit), so its own state has to be reset on each open rather than
+  // relying on unmount/remount to do it for free.
+  useEffect(() => {
+    if (open) {
+      setHost(hosts[0]?.name ?? '')
+      setPlugin(hosts[0]?.plugins[0] ?? '')
+      setSubmitting(false)
+      setError(null)
+      setQueuedJobId(null)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   useEffect(() => {
     if (plugins.length && !plugins.includes(plugin)) setPlugin(plugins[0])
@@ -22,12 +38,13 @@ export function TriggerBackupModal({ hosts, onClose }: { hosts: Host[]; onClose:
   }, [host])
 
   useEffect(() => {
+    if (!open) return
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  }, [open, onClose])
 
   async function handleSubmit() {
     if (!host || !plugin) return
@@ -50,78 +67,98 @@ export function TriggerBackupModal({ hosts, onClose }: { hosts: Host[]; onClose:
   }
 
   return (
-    <div className={styles.backdrop} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="trigger-backup-title" ref={dialogRef}>
-        {queuedJobId ? (
-          <>
-            <h2 id="trigger-backup-title" className={styles.title}>
-              Backup queued
-            </h2>
-            <p className={styles.body}>
-              Job <span className={styles.jobId}>{queuedJobId}</span> is queued for the controller's next open slot.
-            </p>
-            <div className={styles.actions}>
-              <button type="button" className={styles.secondary} onClick={onClose}>
-                Close
-              </button>
-              <button
-                type="button"
-                className={styles.primary}
-                onClick={() => {
-                  navigate(`/jobs/${encodeURIComponent(queuedJobId)}`)
-                  onClose()
-                }}
-              >
-                View job
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h2 id="trigger-backup-title" className={styles.title}>
-              Trigger a backup
-            </h2>
-            <p className={styles.body}>Runs immediately, outside the regular schedule.</p>
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className={styles.backdrop}
+          onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={reduceMotion ? { duration: 0 } : { duration: 0.15 }}
+        >
+          <motion.div
+            className={styles.dialog}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="trigger-backup-title"
+            initial={{ opacity: 0, y: 8, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={reduceMotion ? { duration: 0 } : { duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+          >
+            {queuedJobId ? (
+              <>
+                <h2 id="trigger-backup-title" className={styles.title}>
+                  Backup queued
+                </h2>
+                <p className={styles.body}>
+                  Job <span className={styles.jobId}>{queuedJobId}</span> is queued for the controller's next open slot.
+                </p>
+                <div className={styles.actions}>
+                  <button type="button" className={styles.secondary} onClick={onClose}>
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.primary}
+                    onClick={() => {
+                      navigate(`/jobs/${encodeURIComponent(queuedJobId)}`)
+                      onClose()
+                    }}
+                  >
+                    View job
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 id="trigger-backup-title" className={styles.title}>
+                  Trigger a backup
+                </h2>
+                <p className={styles.body}>Runs immediately, outside the regular schedule.</p>
 
-            <label className={styles.label} htmlFor="trigger-host">
-              Host
-            </label>
-            <select id="trigger-host" className={styles.select} value={host} onChange={(e) => setHost(e.target.value)} autoFocus>
-              {hosts.map((h) => (
-                <option key={h.name} value={h.name}>
-                  {h.name}
-                </option>
-              ))}
-            </select>
+                <label className={styles.label} htmlFor="trigger-host">
+                  Host
+                </label>
+                <select id="trigger-host" className={styles.select} value={host} onChange={(e) => setHost(e.target.value)} autoFocus>
+                  {hosts.map((h) => (
+                    <option key={h.name} value={h.name}>
+                      {h.name}
+                    </option>
+                  ))}
+                </select>
 
-            <label className={styles.label} htmlFor="trigger-plugin">
-              Plugin
-            </label>
-            <select id="trigger-plugin" className={styles.select} value={plugin} onChange={(e) => setPlugin(e.target.value)}>
-              {plugins.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+                <label className={styles.label} htmlFor="trigger-plugin">
+                  Plugin
+                </label>
+                <select id="trigger-plugin" className={styles.select} value={plugin} onChange={(e) => setPlugin(e.target.value)}>
+                  {plugins.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
 
-            {error && (
-              <p className={styles.error} role="alert">
-                {error}
-              </p>
+                {error && (
+                  <p className={styles.error} role="alert">
+                    {error}
+                  </p>
+                )}
+
+                <div className={styles.actions}>
+                  <button type="button" className={styles.secondary} onClick={onClose}>
+                    Cancel
+                  </button>
+                  <button type="button" className={styles.primary} onClick={handleSubmit} disabled={submitting || !host || !plugin}>
+                    {submitting ? 'Queuing…' : 'Trigger backup'}
+                  </button>
+                </div>
+              </>
             )}
-
-            <div className={styles.actions}>
-              <button type="button" className={styles.secondary} onClick={onClose}>
-                Cancel
-              </button>
-              <button type="button" className={styles.primary} onClick={handleSubmit} disabled={submitting || !host || !plugin}>
-                {submitting ? 'Queuing…' : 'Trigger backup'}
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
