@@ -21,15 +21,23 @@ you kick off a backup by clicking a button instead of typing a command.
 
 ## The fastest way to see it work (~2 minutes)
 
-You need [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-running, and [Go](https://go.dev/dl/) and [restic](https://restic.net/)
-installed. If you've been working in this repo already, you have these.
-
-Open PowerShell in this folder and run:
+First, check you actually have everything installed - this pinpoints
+exactly what's missing instead of letting something fail three steps in:
 
 ```powershell
-.\scripts\try-it-out.ps1
+make setup
 ```
+
+Then:
+
+```powershell
+make demo
+```
+
+(equivalent to running `.\scripts\try-it-out.ps1` directly, if you don't
+have `make` - see [Building and running](README.md#building-and-running)
+in the README for why `make` alone can be a little fussy on Windows and
+how `make setup`/the rest of the targets work around it.)
 
 This script does everything for you:
 
@@ -66,12 +74,14 @@ is touched - everything the script writes lives under a temp folder that
 
 ## If something goes wrong
 
-The script checks for the tools it needs (Go, Docker, restic, SSH key
-tools) and tells you what's missing and how to get it. The most likely
-real failure is **port 22 already in use** - BOP's SSH connections always
-go to port 22, so if you already have an SSH server running on this
-machine, stop it first, or the script will tell you and exit cleanly
-rather than fail halfway through.
+Run `make setup` first if you haven't - it checks every tool this needs
+(Go, Node, Docker, restic, SSH key tools) and tells you exactly which one
+is missing and how to get it, rather than letting `make demo` fail
+somewhere in the middle. The most likely real failure beyond that is
+**port 22 already in use** - BOP's SSH connections always go to port 22,
+so if you already have an SSH server running on this machine, stop it
+first, or the script will tell you and exit cleanly rather than fail
+halfway through.
 
 If you want to see what's actually happening under the hood while it
 runs, the terminal window running `try-it-out.ps1` is a real, unmodified
@@ -81,13 +91,20 @@ print in production.
 ## Looking at it without the demo data
 
 If you just want to see the empty app - the connect screen, the layout,
-no fake data - you don't need Docker or restic for that part. You can
-build and run `bop controller` with an empty inventory and `api.enabled:
-true`; see [docs/03-getting-started/quickstart.md](docs/03-getting-started/quickstart.md)
-for how to write a minimal `config.yaml`/`inventory.yaml` by hand, and
-[docs/05-operations.md](docs/05-operations.md#http-api-and-web-ui) for the
-`api.*` block. The dashboard will just show zeros and empty tables until
-a real job runs.
+no fake data - you don't need Docker or restic for that part. `make
+setup` already generated a real `config.yaml`/`inventory.yaml` (from
+`config.example.yaml`/`inventory.example.yaml`) with a placeholder host
+that won't actually connect to anything:
+
+```powershell
+make run
+```
+
+then open `http://127.0.0.1:9091/` and paste in the token from `type
+data\api-tokens.txt`. The dashboard will show zeros and empty tables
+until a real job runs - edit `inventory.yaml` with a real host (see
+[docs/03-getting-started/inventory-reference.md](docs/03-getting-started/inventory-reference.md))
+once you're ready to back something up for real.
 
 ## What to actually poke at
 

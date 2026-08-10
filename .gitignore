@@ -12,6 +12,13 @@
 *.log
 /tmp/
 
+# Your own config, scaffolded by `make setup` from *.example.yaml - real
+# secrets can end up in here (generated tokens, restic password), never
+# the *.example.yaml templates themselves.
+/config.yaml
+/inventory.yaml
+/data/
+
 # Editor / OS
 .DS_Store
 .idea/

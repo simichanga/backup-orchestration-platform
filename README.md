@@ -41,7 +41,13 @@ See [docs/08-roadmap.md](docs/08-roadmap.md) for the full prioritized-but
 
 ## Getting Started
 
-Just want to see it work? [TESTING.md](TESTING.md) - one script spins up
+New machine? `make setup` checks every tool this needs is actually
+installed and working, and tells you exactly which one is missing if
+not - then it scaffolds `config.yaml`/`inventory.yaml`/`data/` from the
+committed `*.example.yaml` templates so `make run`/`make dev` have
+something real to point at immediately.
+
+Just want to see it work? [TESTING.md](TESTING.md) - `make demo` spins up
 a real demo and opens the web UI, no manual config required.
 
 1. [Installation](docs/03-getting-started/installation.md)
@@ -60,6 +66,7 @@ at [docs/04-writing-plugins.md](docs/04-writing-plugins.md).
 `make` (bare, or `make help`) lists every target:
 
 ```
+make setup         Check required tools are installed and working, scaffold config.yaml/inventory.yaml/data/ (Windows)
 make build         Build bop (rebuilds the web UI first)
 make build-web     Rebuild only the embedded web UI
 make run           Build, then run the bundled binary against CONFIG= (default config.yaml)

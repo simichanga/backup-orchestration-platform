@@ -63,12 +63,13 @@ else
 RUN_BIN := $(BIN)
 endif
 
-.PHONY: help build build-web run dev demo demo-clean test vet fmt clean
+.PHONY: help setup build build-web run dev demo demo-clean test vet fmt clean
 
 .DEFAULT_GOAL := help
 
 help:
 	@echo BOP - available make targets:
+	@echo   make setup         Check required tools are installed and working, scaffold config.yaml/inventory.yaml/data/ (Windows)
 	@echo   make build         Build bop (rebuilds the web UI first)
 	@echo   make build-web     Rebuild only the embedded web UI
 	@echo   make run           Build, then run the bundled binary against CONFIG= (default config.yaml)
@@ -80,6 +81,10 @@ help:
 	@echo   make fmt           List any files gofmt would reformat
 	@echo   make clean         Remove bin/
 	@echo Override CONFIG like this: make run CONFIG=path\to\config.yaml
+	@echo First time here? Start with: make setup
+
+setup:
+	$(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1
 
 # internal/webui embeds web/'s build output at compile time (see
 # internal/webui/webui.go) - go build alone reuses whatever's already

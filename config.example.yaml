@@ -1,0 +1,64 @@
+# BOP local development config.
+#
+# `make setup` copies this to config.yaml (never overwriting one that
+# already exists) alongside inventory.example.yaml -> inventory.yaml and a
+# data/ directory with generated secrets, so `make run`/`make dev` have
+# something real to point at immediately. You can also do this by hand:
+#   cp config.example.yaml config.yaml
+#   cp inventory.example.yaml inventory.yaml
+#
+# Everything below points at ./data/, so BOP's own state stays inside the
+# repo and out of source control (see .gitignore) - convenient for local
+# dev, not how you'd lay things out in production. For that, see
+# docs/05-operations.md (systemd unit, secrets delivery) and
+# docs/03-getting-started/configuration.md (the full reference this file
+# is a trimmed-down copy of).
+
+inventory: ./inventory.yaml
+
+storage:
+  provider: restic
+  restic:
+    repository: ./data/restic-repo
+    password_file: ./data/restic-password.txt
+    concurrency: 2
+
+controller:
+  concurrency: 4
+  job_timeout: 2h
+  temp_dir: ./data/tmp
+
+scheduler:
+  cron_location: "Local"
+
+ssh:
+  known_hosts_file: ./data/known_hosts
+
+metadata:
+  driver: sqlite
+  dsn: ./data/metadata.db
+  event_retention: 720h
+
+# On by default here (unlike the production default) so the web UI works
+# right after `make run` - see docs/05-operations.md#http-api-and-web-ui.
+# make setup generates real random tokens into data/api-tokens.txt and
+# data/api-write-tokens.txt; read them with:
+#   type data\api-tokens.txt
+#   type data\api-write-tokens.txt
+api:
+  enabled: true
+  addr: "127.0.0.1:9091"
+  tokens_file: ./data/api-tokens.txt
+  write_tokens_file: ./data/api-write-tokens.txt
+
+metrics:
+  port: 9090
+  path: /metrics
+
+logging:
+  level: info
+  format: json
+
+verification:
+  enabled: false
+  target_dir: ./data/bop-verify

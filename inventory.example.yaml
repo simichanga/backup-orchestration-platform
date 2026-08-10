@@ -1,0 +1,27 @@
+# BOP inventory - copied to inventory.yaml by `make setup` (never
+# overwriting one that already exists).
+#
+# The single placeholder entry below exists so BOP has something
+# structurally valid to load - it will NOT actually connect to anything
+# until you replace host/ssh_user/ssh_key with a real target. There's no
+# `schedule` set, so it never runs on its own either way - only if you
+# trigger it by hand (`bop backup`) or through the web UI's "Trigger
+# backup" button.
+#
+# Full schema: docs/03-getting-started/inventory-reference.md
+# Worked walkthrough: docs/03-getting-started/quickstart.md
+
+servers:
+  example-host:
+    host: 203.0.113.10 # replace: a real hostname or IP BOP can SSH into
+    ssh_user: bop # replace: the SSH user on that host
+    ssh_key: /path/to/your/private_key # replace: e.g. C:/Users/you/.ssh/id_ed25519
+    plugins:
+      filesystem:
+        config:
+          paths:
+            - /var/www
+    retention:
+      daily: 7
+      weekly: 4
+      monthly: 12
