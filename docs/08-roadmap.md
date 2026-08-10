@@ -57,22 +57,29 @@ restore is higher-stakes (it reads back and can overwrite real state) and
 was judged to deserve its own scoping round rather than shipping by
 default alongside trigger-backup. Still true; still needs that round.
 
-### 4. Frontend has no automated test coverage
+### 4. Frontend test coverage
 
-Started. Vitest + React Testing Library are wired up
+Done, in the sense that matters (every real logic path has a test) rather
+than "100% of files touched." Vitest + React Testing Library are wired up
 (`web/vite.config.ts`'s `test` block, `make test-web`, and a CI step), with
-coverage of: `src/api/client.ts`'s auth/401 handling and `src/state/auth.tsx`
-(including a regression test for the exact read-only-token-logs-out-the-
-session bug manual Playwright testing caught once, see
-`web/src/state/auth.test.tsx`); `src/lib/format.ts` and `src/lib/activity.ts`
-(pure formatting/bucketing logic); `src/components/Seal.tsx`'s
-`sealTierForEvents` (the verification-tier derivation, not decoration - see
-its own doc comment); `src/hooks/useApi.ts` (stale-request guarding,
-silent background-refresh-on-error, and visibility-based poll pause/resume -
-previously verified only by hand); and `src/components/TriggerBackupModal.tsx`'s
+68 tests across 14 files covering: `src/api/client.ts`'s auth/401 handling
+and `src/state/auth.tsx` (including a regression test for the exact
+read-only-token-logs-out-the-session bug manual Playwright testing caught
+once); the pure `src/lib/format.ts`/`src/lib/activity.ts`;
+`src/components/Seal.tsx`'s `sealTierForEvents` (the verification-tier
+derivation, not decoration); `src/hooks/useApi.ts` (stale-request guarding,
+silent background-refresh-on-error, visibility-based poll pause/resume -
+previously verified only by hand); `src/components/TriggerBackupModal.tsx`'s
 write-scope-401 inline error path (the exact thing TESTING.md tells users to
-go check manually today). **Pages** (`src/pages/*`) are what's left with
-zero coverage.
+go check manually); and all seven pages under `src/pages/` (status/host/job
+filters, the type-then-Apply pattern on Events, the auto-select-first-host
+effect on Snapshots, dashboard stat derivation with the recharts-dependent
+`ActivityChart` mocked out since jsdom has no `ResizeObserver`). Every
+regression test added this round that guards non-obvious behavior was
+mutation-verified (break the behavior, confirm red, revert), not just
+trusted on green. Pure layout/presentational pieces (`AppShell`, `Page`,
+`StatusPill`) remain untested - deliberately, there's no real logic there
+to regress.
 
 ### 5. Secrets-at-rest is minimal by design, not by accident
 
