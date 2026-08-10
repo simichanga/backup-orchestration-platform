@@ -45,11 +45,9 @@ regardless of how much autonomy is granted going into that session.
 
 ### 2. Release & distribution
 
-Until now, "installing BOP" meant cloning and running `go build`
-yourself. A tagged-release pipeline (cross-compiled binaries for Windows
-and Linux, published to GitHub Releases) is the natural next step once a
-version is actually meant to be used outside this dev machine - see
-"In progress" below, this is being built now.
+Done - [.github/workflows/release.yml](../.github/workflows/release.yml)
+cross-compiles Windows and Linux amd64 binaries and publishes them to
+GitHub Releases on a tag push.
 
 ### 3. Restore is CLI-only
 
@@ -61,16 +59,14 @@ default alongside trigger-backup. Still true; still needs that round.
 
 ### 4. Frontend has no automated test coverage
 
-`web/` has zero unit/component tests - `internal/api`, `internal/cli`,
-etc. all have real Go test suites, but the browser UI was verified this
-session entirely through manual, real-browser Playwright scripts (see the
-git history around when `web/` was added). That caught a real bug (a
-read-only token's 401 on the write endpoint was logging the whole session
-out), which is good evidence the UI needs *some* systematic coverage, not
-proof that manual verification is sufficient going forward. Needs: a test
-runner (Vitest is the natural fit for a Vite project), at minimum
-coverage of `src/api/client.ts`'s auth/401 handling and `src/state/auth.tsx`,
-since that's exactly where the one real bug found so far lived.
+Started. Vitest + React Testing Library are wired up
+(`web/vite.config.ts`'s `test` block, `make test-web`, and a CI step), with
+coverage of `src/api/client.ts`'s auth/401 handling and `src/state/auth.tsx`
+- including a regression test for the exact read-only-token-logs-out-the-
+session bug manual Playwright testing caught once (see
+`web/src/state/auth.test.tsx`). Everything else under `web/` (components,
+pages) still has zero coverage - this closed the highest-risk gap, not the
+whole gap.
 
 ### 5. Secrets-at-rest is minimal by design, not by accident
 
@@ -101,14 +97,11 @@ as HA.
 ## Frontend evolution
 
 The UI (`web/`) covers everything the API exposes today. Two enhancements
-were scoped this session (2026-08-10) and are either in progress or
-awaiting a design-tool decision - see recent git history / the session
-that added this doc for the outcome:
-- **Live auto-refresh** - jobs currently require a manual reload to see a
-  queued→running→succeeded transition; client-side polling would make
-  that visible without any backend change.
-- **A real activity visualization on the dashboard** - built from actual
-  job/event timestamps, not sample data.
+scoped earlier (2026-08-10) both shipped same-day, before this doc's test-
+coverage item was picked up: live client-side polling so a queued→running→
+succeeded transition shows up without a manual reload, and a real activity
+visualization on the dashboard built from actual job/event timestamps (not
+sample data). See `2b6ea2b` for both.
 
 ## Known cosmetic nit
 

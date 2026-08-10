@@ -74,6 +74,7 @@ make dev           Run the backend and the frontend dev server together, hot-rel
 make demo          Zero-config real demo: throwaway Docker target + real controller + browser
 make demo-clean    Remove the demo's Docker container and temp files
 make test          go test ./...
+make test-web      Run web/'s Vitest suite
 make vet           go vet ./...
 make fmt           List any files gofmt would reformat
 make clean         Remove bin/
@@ -96,8 +97,9 @@ changing anything under `web/`, run `make build-web` and commit the
 result - CI checks that `internal/webui/dist` isn't stale.
 
 [.github/workflows/ci.yml](.github/workflows/ci.yml) runs the same build/vet/fmt
-checks on every push, plus `go test -race ./...` - the race detector needs a C
-toolchain, so it only runs in CI, not on a plain Windows dev machine.
+checks on every push, plus `go test -race ./...` (the race detector needs a C
+toolchain, so it only runs in CI, not on a plain Windows dev machine) and
+`web`'s Vitest suite.
 
 ## Architecture
 

@@ -73,7 +73,7 @@ else
 RUN_BIN := $(BIN)
 endif
 
-.PHONY: help setup build build-web run dev demo demo-clean test vet fmt clean
+.PHONY: help setup build build-web run dev demo demo-clean test test-web vet fmt clean
 
 .DEFAULT_GOAL := help
 
@@ -87,6 +87,7 @@ help:
 	@echo   make demo          Zero-config real demo: throwaway Docker target + real controller + browser
 	@echo   make demo-clean    Remove the demo's Docker container and temp files
 	@echo   make test          go test ./...
+	@echo   make test-web      Run web/'s Vitest suite
 	@echo   make vet           go vet ./...
 	@echo   make fmt           List any files gofmt would reformat
 	@echo   make clean         Remove bin/
@@ -120,6 +121,10 @@ demo-clean:
 
 test:
 	go test ./...
+
+test-web:
+	npm --prefix web ci
+	npm --prefix web run test
 
 vet:
 	go vet ./...
