@@ -118,11 +118,13 @@ sample data). See `2b6ea2b` for both.
 
 ## Known cosmetic nit
 
-`bop health --plugin X` where `X` is registered but not configured for
-that specific host returns a raw config-parse error instead of a clean
-"not configured for this host" message. Deliberately left alone so far -
-low severity, correct behavior either way, just a worse error message
-than it should be.
+Fixed (2026-08-10). `bop health --plugin X` where `X` is registered but not
+configured for that specific host used to return a raw config-parse error
+("postgres: no config provided", doubly wrapped) instead of a clean
+"not configured for this host" message - `Controller.BuildPlugin` (and
+`runPipeline`, the same bug on the real backup-job path, not just the CLI
+check) now checks whether the host's inventory entry lists the plugin at
+all before ever reaching the plugin's own config parsing.
 
 ## Explicitly not planned
 

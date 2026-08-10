@@ -97,6 +97,51 @@ metadata:
 	}
 }
 
+// TestHealthCmdPluginNotConfiguredForHost is the case docs/08-roadmap.md
+// used to flag as a known nit: postgres is registered as a plugin type and
+// works fine on other hosts, but this specific host's inventory entry never
+// lists it under `plugins:`. Before the fix, srv.Plugins["postgres"]'s
+// missing-key zero value (nil) got passed straight to the postgres
+// factory, which rejected it exactly like malformed config would
+// ("postgres: no config provided", doubly wrapped) - indistinguishable
+// from a real config error. Controller.BuildPlugin now checks the key's
+// presence before ever reaching the factory.
+func TestHealthCmdPluginNotConfiguredForHost(t *testing.T) {
+	dir := t.TempDir()
+	invPath := writeTestFile(t, dir, "inventory.yaml", `
+servers:
+  prod-db:
+    host: 192.168.1.100
+    plugins:
+      filesystem:
+        config:
+          paths: ["/data"]
+    retention:
+      daily: 7
+`)
+	cfgPath := writeTestFile(t, dir, "config.yaml", `
+inventory: `+invPath+`
+storage:
+  provider: restic
+  restic:
+    repository: `+dir+`/repo
+    password_file: `+dir+`/restic-password.txt
+metadata:
+  driver: sqlite
+  dsn: ":memory:"
+`)
+
+	root := NewRootCmd()
+	root.SetArgs([]string{"--config", cfgPath, "health", "--host", "prod-db", "--plugin", "postgres"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatalf("health --plugin postgres on a host that never lists it: expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not configured for host") {
+		t.Errorf("health error = %v, want a clear \"not configured for host\" message, not a raw config-parse error", err)
+	}
+}
+
 // TestHealthCmdPropagatesPluginHealthError uses a real postgres config (so
 // BuildPlugin succeeds) pointed at 192.168.1.100 - the same
 // assumed-unreachable-in-this-sandbox address controller_test.go's fixtures

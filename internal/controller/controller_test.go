@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -282,6 +283,53 @@ func TestRunJobUnknownHostLeavesJobUntouched(t *testing.T) {
 	}
 	if got.Status != core.JobStatusQueued {
 		t.Errorf("job status = %q, want unchanged (queued) since the job never started", got.Status)
+	}
+}
+
+// TestRunJobPluginNotConfiguredForHost covers the same bug fix as
+// internal/cli's TestHealthCmdPluginNotConfiguredForHost, on the real
+// backup pipeline this time rather than the CLI health check: postgres is
+// a registered plugin type, but this host's inventory entry never lists
+// it under `plugins:` at all. Before the fix, the missing map key's zero
+// value (nil) got passed straight to the factory, producing the exact
+// same "no config provided" message a genuinely malformed config block
+// would - this checks the pipeline now fails clearly and, unlike an
+// unknown host/plugin type, still marks the job failed (this happens
+// inside the pipeline, after the job is already in_progress).
+func TestRunJobPluginNotConfiguredForHost(t *testing.T) {
+	p := &stubPlugin{tempDir: t.TempDir()}
+	s := newStubStorage()
+	inv := &inventory.Inventory{
+		Servers: map[string]inventory.Server{
+			"prod-db": {
+				Host:      "192.168.1.100",
+				Plugins:   map[string]*inventory.PluginConfig{}, // postgres never listed for this host
+				Retention: core.Policy{Daily: 7},
+			},
+		},
+	}
+	c, md := setup(t, p, s, inv)
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+
+	err := c.RunJob(ctx, job)
+	if err == nil {
+		t.Fatalf("RunJob: expected an error for a plugin not configured on this host, got nil")
+	}
+	if !strings.Contains(err.Error(), "not configured for host") {
+		t.Errorf("RunJob error = %v, want a clear \"not configured for host\" message, not a raw config-parse error", err)
+	}
+
+	got, err := md.GetJob(ctx, "job-1")
+	if err != nil {
+		t.Fatalf("GetJob: %v", err)
+	}
+	if got.Status != core.JobStatusFailed {
+		t.Errorf("job status = %q, want failed (the job was already in_progress when this failed)", got.Status)
 	}
 }
 

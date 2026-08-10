@@ -81,7 +81,11 @@ func (c *Controller) BuildPlugin(host, pluginName string) (plugin.BackupPlugin, 
 	if !ok {
 		return nil, fmt.Errorf("controller: no plugin registered for %q", pluginName)
 	}
-	p, err := factory(srv, srv.Plugins[pluginName], c.TempDir)
+	cfg, ok := srv.Plugins[pluginName]
+	if !ok {
+		return nil, fmt.Errorf("controller: plugin %q is not configured for host %q", pluginName, host)
+	}
+	p, err := factory(srv, cfg, c.TempDir)
 	if err != nil {
 		return nil, fmt.Errorf("controller: instantiate plugin %q for %q: %w", pluginName, host, err)
 	}
@@ -189,7 +193,11 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 // same host. The job is reported failed if any resource failed, but every
 // resource that did succeed still has its snapshot recorded.
 func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventory.Server, factory PluginFactory) error {
-	p, err := factory(srv, srv.Plugins[job.Plugin], c.TempDir)
+	cfg, ok := srv.Plugins[job.Plugin]
+	if !ok {
+		return fmt.Errorf("plugin %q is not configured for host %q", job.Plugin, job.Host)
+	}
+	p, err := factory(srv, cfg, c.TempDir)
 	if err != nil {
 		return fmt.Errorf("instantiate plugin %q: %w", job.Plugin, err)
 	}
