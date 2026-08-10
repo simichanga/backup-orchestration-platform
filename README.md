@@ -36,6 +36,8 @@ for the current honest limitations. Design proposals (not implemented)
 exist for both of those gaps:
 [docs/06-high-availability.md](docs/06-high-availability.md) and
 [docs/07-out-of-process-plugins.md](docs/07-out-of-process-plugins.md).
+See [docs/08-roadmap.md](docs/08-roadmap.md) for the full prioritized-but
+-not-yet-decided list of what's next.
 
 ## Getting Started
 
