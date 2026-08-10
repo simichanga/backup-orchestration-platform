@@ -66,12 +66,12 @@ at [docs/04-writing-plugins.md](docs/04-writing-plugins.md).
 `make` (bare, or `make help`) lists every target:
 
 ```
-make setup         Check required tools are installed and working, scaffold config.yaml/inventory.yaml/data/ (Windows)
+make setup         Check required tools are installed and working, scaffold config.yaml/inventory.yaml/data/
 make build         Build bop (rebuilds the web UI first)
 make build-web     Rebuild only the embedded web UI
 make run           Build, then run the bundled binary against CONFIG= (default config.yaml)
-make dev           Run the backend and the frontend dev server together, hot-reloading (Windows, needs CONFIG=)
-make demo          Zero-config real demo: throwaway Docker target + real controller + browser (Windows)
+make dev           Run the backend and the frontend dev server together, hot-reloading (needs CONFIG=)
+make demo          Zero-config real demo: throwaway Docker target + real controller + browser
 make demo-clean    Remove the demo's Docker container and temp files
 make test          go test ./...
 make vet           go vet ./...
@@ -79,9 +79,14 @@ make fmt           List any files gofmt would reformat
 make clean         Remove bin/
 ```
 
+Every target works the same way on Windows (PowerShell, `scripts/*.ps1`)
+and Linux (bash, `scripts/*.sh`) - `make` picks the right script for the
+OS it's running on. Verified on both: Windows natively, Linux via a real
+WSL2 Ubuntu environment (not just Git Bash).
+
 `make run`/`make dev` need a real `config.yaml` (`CONFIG=path` to override
 the default) - `make demo` doesn't, it builds a real one for you. See
-[TESTING.md](TESTING.md) for what `make demo`/`scripts/try-it-out.ps1`
+[TESTING.md](TESTING.md) for what `make demo`/`scripts/try-it-out.*`
 actually do.
 
 Plain `go build -o bin/bop ./cmd/bop` also works and doesn't need `make`

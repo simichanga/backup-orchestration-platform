@@ -24,20 +24,23 @@ you kick off a backup by clicking a button instead of typing a command.
 First, check you actually have everything installed - this pinpoints
 exactly what's missing instead of letting something fail three steps in:
 
-```powershell
+```
 make setup
 ```
 
 Then:
 
-```powershell
+```
 make demo
 ```
 
-(equivalent to running `.\scripts\try-it-out.ps1` directly, if you don't
-have `make` - see [Building and running](README.md#building-and-running)
-in the README for why `make` alone can be a little fussy on Windows and
-how `make setup`/the rest of the targets work around it.)
+Works the same way on Windows and Linux - `make` runs
+`scripts\try-it-out.ps1` or `scripts/try-it-out.sh` depending on which
+one you're on. If you don't have `make`, call the script directly
+instead (`.\scripts\try-it-out.ps1` on Windows, `./scripts/try-it-out.sh`
+on Linux) - see [Building and running](README.md#building-and-running) in
+the README for why `make` alone can be a little fussy on Windows and how
+`make setup`/the rest of the targets work around it.
 
 This script does everything for you:
 
@@ -64,13 +67,13 @@ not just because the job finished).
 When you're done, close the browser tab and press **Ctrl+C** in the
 terminal to stop the controller. Then run:
 
-```powershell
-.\scripts\try-it-out.ps1 -Cleanup
+```
+make demo-clean
 ```
 
 to remove the Docker container it created. Nothing else on your machine
 is touched - everything the script writes lives under a temp folder that
-`-Cleanup` also deletes.
+this also deletes.
 
 ## If something goes wrong
 
@@ -84,7 +87,7 @@ first, or the script will tell you and exit cleanly rather than fail
 halfway through.
 
 If you want to see what's actually happening under the hood while it
-runs, the terminal window running `try-it-out.ps1` is a real, unmodified
+runs, the terminal window running `make demo` is a real, unmodified
 `bop controller` process - its logs are the same JSON log lines it would
 print in production.
 
@@ -96,13 +99,14 @@ setup` already generated a real `config.yaml`/`inventory.yaml` (from
 `config.example.yaml`/`inventory.example.yaml`) with a placeholder host
 that won't actually connect to anything:
 
-```powershell
+```
 make run
 ```
 
-then open `http://127.0.0.1:9091/` and paste in the token from `type
-data\api-tokens.txt`. The dashboard will show zeros and empty tables
-until a real job runs - edit `inventory.yaml` with a real host (see
+then open `http://127.0.0.1:9091/` and paste in the token from
+`data/api-tokens.txt` (`type data\api-tokens.txt` on Windows, `cat
+data/api-tokens.txt` on Linux). The dashboard will show zeros and empty
+tables until a real job runs - edit `inventory.yaml` with a real host (see
 [docs/03-getting-started/inventory-reference.md](docs/03-getting-started/inventory-reference.md))
 once you're ready to back something up for real.
 

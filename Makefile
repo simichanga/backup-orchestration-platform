@@ -45,9 +45,19 @@ POWERSHELL := $(SYSNATIVE_PWSH)
 else
 POWERSHELL := powershell
 endif
+SETUP_CMD := $(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1
+DEV_CMD := $(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\dev.ps1 -Config $(CONFIG)
+DEMO_CMD := $(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\try-it-out.ps1
+DEMO_CLEAN_CMD := $(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\try-it-out.ps1 -Cleanup
 else
 RM := rm -rf $(BIN_DIR)
-POWERSHELL := powershell
+# Explicit `bash`, not relying on Make's own recipe shell (which on
+# Debian/Ubuntu defaults to dash, not bash) - these scripts use bash-only
+# features (arrays, `wait -n`, the `kill 0` process-group cleanup trap).
+SETUP_CMD := bash scripts/setup.sh
+DEV_CMD := bash scripts/dev.sh --config $(CONFIG)
+DEMO_CMD := bash scripts/try-it-out.sh
+DEMO_CLEAN_CMD := bash scripts/try-it-out.sh --cleanup
 endif
 
 BIN := $(BIN_DIR)/$(BINARY)
@@ -69,22 +79,22 @@ endif
 
 help:
 	@echo BOP - available make targets:
-	@echo   make setup         Check required tools are installed and working, scaffold config.yaml/inventory.yaml/data/ (Windows)
+	@echo   make setup         Check required tools are installed and working, scaffold config.yaml/inventory.yaml/data/
 	@echo   make build         Build bop (rebuilds the web UI first)
 	@echo   make build-web     Rebuild only the embedded web UI
 	@echo   make run           Build, then run the bundled binary against CONFIG= (default config.yaml)
-	@echo   make dev           Run the backend and the frontend dev server together, hot-reloading (Windows, needs CONFIG=)
-	@echo   make demo          Zero-config real demo: throwaway Docker target + real controller + browser (Windows)
+	@echo   make dev           Run the backend and the frontend dev server together, hot-reloading (needs CONFIG=)
+	@echo   make demo          Zero-config real demo: throwaway Docker target + real controller + browser
 	@echo   make demo-clean    Remove the demo's Docker container and temp files
 	@echo   make test          go test ./...
 	@echo   make vet           go vet ./...
 	@echo   make fmt           List any files gofmt would reformat
 	@echo   make clean         Remove bin/
-	@echo Override CONFIG like this: make run CONFIG=path\to\config.yaml
+	@echo Override CONFIG like this: make run CONFIG=path/to/config.yaml
 	@echo First time here? Start with: make setup
 
 setup:
-	$(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\setup.ps1
+	$(SETUP_CMD)
 
 # internal/webui embeds web/'s build output at compile time (see
 # internal/webui/webui.go) - go build alone reuses whatever's already
@@ -100,13 +110,13 @@ run: build
 	$(RUN_BIN) --config $(CONFIG) controller
 
 dev:
-	$(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\dev.ps1 -Config $(CONFIG)
+	$(DEV_CMD)
 
 demo:
-	$(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\try-it-out.ps1
+	$(DEMO_CMD)
 
 demo-clean:
-	$(POWERSHELL) -NoProfile -ExecutionPolicy Bypass -File scripts\try-it-out.ps1 -Cleanup
+	$(DEMO_CLEAN_CMD)
 
 test:
 	go test ./...
