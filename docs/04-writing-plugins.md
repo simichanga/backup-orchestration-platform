@@ -3,9 +3,18 @@
 A plugin implements `BackupPlugin` (`internal/plugin/plugin.go`): the
 contract every backup source (PostgreSQL, filesystem, ...) implements. The
 controller never contains source-specific logic - it only calls these six
-methods. This page walks through the contract using the two real,
+methods. This page walks through the contract using the real,
 real-infrastructure-tested implementations (`internal/plugin/postgres`,
 `internal/plugin/filesystem`) as worked examples.
+
+`internal/plugin/informix` is a third, structurally different example
+worth reading once you understand postgres/filesystem: it needs no SSH
+at all. It spawns a local gRPC subprocess (`ifx-agent`, from the
+[informix-odbc](https://github.com/simichanga/informix-odbc) project)
+and talks to the Informix server over the network from there, injected
+behind a small `agentClient` interface so tests can swap in a fake
+instead of spawning a real subprocess - the same role `sshexec.Executor`
+plays for postgres/filesystem, just for a different transport.
 
 ## Phase 1: Compiled In, Not Loaded
 

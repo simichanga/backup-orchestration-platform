@@ -116,13 +116,60 @@ restores into a disposable directory under `/tmp` (regardless of what
 `verification.target_dir` is set to - see
 [Configuration Reference](configuration.md)) and cleans up afterward.
 
+### `informix`
+
+Backs up IBM Informix databases through `ifx-agent`, a separate gRPC
+subprocess from the [informix-odbc](https://github.com/simichanga/informix-odbc)
+project that `bop` spawns locally and talks to - not SSH. The `host`/
+`ssh_user`/`ssh_key` fields above are not used by this plugin at all;
+the Informix server address lives in its own `host`/`port` keys below.
+
+| Key            | Type           | Required | Description |
+|----------------|----------------|----------|--------------|
+| `host`         | string         | yes      | Informix server hostname or IP. |
+| `port`         | number         | yes      | Informix server port (e.g. `9088`). |
+| `username`     | string         | yes      | Informix user to connect as. |
+| `password_env` | string         | yes      | Name of an environment variable holding the password - same convention as `postgres`'s `password_env` above. |
+| `server_name`  | string         | yes      | The `INFORMIXSERVER` value (Informix's own server identifier, not the hostname). |
+| `database`     | string         | yes      | Database name. |
+| `tables`       | list of string | yes, at least one | Table names to back up. Each becomes one resource (one job step, one snapshot). |
+| `agent_path`   | string         | yes      | Path to the `ifx-agent` binary on whatever host runs `bop controller`. |
+
+```yaml
+plugins:
+  informix:
+    config:
+      host: 10.0.0.5
+      port: 9088
+      username: informix
+      password_env: IFX_BACKUP_PASSWORD
+      server_name: informix
+      database: appdb
+      tables:
+        - customers
+        - orders
+      agent_path: /usr/local/bin/ifx-agent
+```
+
+This config can also be set (or changed) without touching
+`inventory.yaml` at all, through the API or web UI - see
+[Web-configurable plugin settings](../05-operations.md#web-configurable-plugin-settings).
+
+Restore re-inserts rows into the table named in the backup artifact -
+it does not recreate a dropped table from scratch (that's planned, not
+built yet). The restore-test pipeline step runs the same insert path
+against the real table, inside a transaction that is always rolled
+back, never committed - there is no scratch table, since Informix in
+this setup does not support `CREATE TABLE ... (LIKE ...)` as a
+structure copy.
+
 ### `docker`
 
 Mentioned as an example of a no-config plugin (`docker:` with a null
 value) in [Introduction](../01-introduction.md), but **not implemented
-yet** - only `postgres` and `filesystem` are real, registered plugins in
-Phase 1. An inventory entry naming `docker` will fail at job-run time with
-"no plugin registered for docker".
+yet** - only `postgres`, `filesystem`, and `informix` are real,
+registered plugins in Phase 1. An inventory entry naming `docker` will
+fail at job-run time with "no plugin registered for docker".
 
 ## Retention
 

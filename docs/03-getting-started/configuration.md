@@ -147,8 +147,9 @@ servers:
 ## Secrets Management
 
 Never store a plaintext secret value in `inventory.yaml` or `config.yaml`.
-Every secret BOP touches - the postgres plugin's database password, the
-restic repository password, the API's bearer tokens - is delivered one of
+Every secret BOP touches - the postgres/informix plugins' database
+passwords, the restic repository password, the API's bearer tokens - is
+delivered one of
 two ways, your choice per secret:
 
 - **`*_file`**: a path to a file containing just the secret

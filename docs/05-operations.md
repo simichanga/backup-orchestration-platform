@@ -129,10 +129,56 @@ Endpoints:
 | GET    | `/v1/snapshots?host=...` | read  | Snapshot history for a host (required)                     |
 | GET    | `/v1/events`             | read  | Recent events, optional `?job_id=`/`?host=`, `?limit=` (default 100, max 1000) |
 | POST   | `/v1/backups`            | write | `{"host": "...", "plugin": "..."}` - triggers an ad-hoc backup |
+| GET    | `/v1/hosts/{host}/plugins/{plugin}/config` | read | Stored web config for this host/plugin, 404 if nothing has been saved yet |
+| PUT    | `/v1/hosts/{host}/plugins/{plugin}/config` | write | Saves plugin config to the database - see [Web-configurable plugin settings](#web-configurable-plugin-settings) below |
 
 `bop restore` and everything else in [Quickstart](03-getting-started/quickstart.md#9-test-a-restore)
-stays CLI-only for now - `POST /v1/backups` is deliberately the only
-mutating endpoint in this pass.
+stays CLI-only for now - `POST /v1/backups` and the plugin config
+endpoints above are the only mutating endpoints in this pass.
+
+### Web-configurable plugin settings
+
+Most plugins are configured once, in `inventory.yaml`, before `bop
+controller` starts. The `informix` plugin can instead be configured (or
+reconfigured) through the API or web UI, while the controller keeps
+running, with no restart needed:
+
+```
+curl -X PUT http://127.0.0.1:9091/v1/hosts/prod-informix/plugins/informix/config \
+  -H "Authorization: Bearer $WRITE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "host": "10.0.0.5",
+    "port": 9088,
+    "username": "informix",
+    "passwordEnv": "IFX_BACKUP_PASSWORD",
+    "serverName": "informix",
+    "database": "appdb",
+    "tables": ["customers", "orders"],
+    "agentPath": "/usr/local/bin/ifx-agent"
+  }'
+```
+
+The web UI exposes the same thing as a form: open `/hosts/{host}/plugins/informix/config`
+in the ops console (linked from each host row on the Hosts page).
+
+A saved config is stored in the metadata database (table
+`plugin_settings`, keyed by host and plugin) and takes effect on the
+very next backup for that host - the controller resolves a plugin's
+config fresh on every job, checking the database first and falling
+back to the `plugins.informix.config` block in `inventory.yaml` only
+if nothing has been saved through the API. This means a host can have
+no static informix config in `inventory.yaml` at all (just a
+`plugins: { informix: null }` placeholder, so the host entry itself is
+valid) and still back up informix once a config is PUT through the
+API.
+
+As with every other secret in BOP, the stored config holds a
+`password_env` variable name, never a plaintext password - see
+[Secrets Management](03-getting-started/configuration.md#secrets-management).
+
+Only `informix` is wired up today. A PUT for any other plugin name
+returns `400 Bad Request`.
 
 ### Read vs write tokens
 
