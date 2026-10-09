@@ -48,7 +48,7 @@ func triggerBackupHandler(ctl *controller.Controller, q queue.Queue) http.Handle
 			return
 		}
 
-		if _, err := ctl.BuildPlugin(req.Host, req.Plugin); err != nil {
+		if _, err := ctl.BuildPlugin(r.Context(), req.Host, req.Plugin); err != nil {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}

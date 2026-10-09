@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { PageHeader } from '../components/Page'
 import { EmptyState, ErrorNotice, Loading } from '../components/States'
@@ -22,6 +23,7 @@ export function HostsPage() {
                 <th>Address</th>
                 <th>Plugins</th>
                 <th>Schedule</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -31,6 +33,13 @@ export function HostsPage() {
                   <td className={table.mono}>{host.host}</td>
                   <td className={table.mono}>{host.plugins.join(', ')}</td>
                   <td className={table.mono}>{host.schedule || '—'}</td>
+                  <td>
+                    {/* Always offered, even for a host with no "informix"
+                        plugin block in inventory.yaml yet - web config can
+                        set one up from scratch, see internal/metadata's
+                        plugin_settings table. */}
+                    <Link to={`/hosts/${encodeURIComponent(host.name)}/plugins/informix/config`}>Configure Informix</Link>
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -32,7 +32,7 @@ func openTestStore(t *testing.T) *Store {
 		// construction for SQLite's fresh ":memory:" DB per Open call, but
 		// Postgres is a real persistent server, so this has to be done
 		// explicitly for every test that opts into the Postgres backend.
-		if _, err := s.db.Exec("TRUNCATE TABLE jobs, snapshots, events RESTART IDENTITY"); err != nil {
+		if _, err := s.db.Exec("TRUNCATE TABLE jobs, snapshots, events, plugin_settings RESTART IDENTITY"); err != nil {
 			t.Fatalf("truncate tables: %v", err)
 		}
 		t.Cleanup(func() { s.Close() })

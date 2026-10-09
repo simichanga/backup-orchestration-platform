@@ -9,6 +9,7 @@ package controller
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -72,7 +73,7 @@ func (c *Controller) RegisterPlugin(name string, factory PluginFactory) {
 // through it. For callers that need a plugin instance directly - a health
 // check, for instance - rather than the full backup pipeline (metadata
 // recording, verification, retention).
-func (c *Controller) BuildPlugin(host, pluginName string) (plugin.BackupPlugin, error) {
+func (c *Controller) BuildPlugin(ctx context.Context, host, pluginName string) (plugin.BackupPlugin, error) {
 	srv, ok := c.Inventory.Servers[host]
 	if !ok {
 		return nil, fmt.Errorf("controller: host %q not found in inventory", host)
@@ -81,15 +82,43 @@ func (c *Controller) BuildPlugin(host, pluginName string) (plugin.BackupPlugin, 
 	if !ok {
 		return nil, fmt.Errorf("controller: no plugin registered for %q", pluginName)
 	}
-	cfg, ok := srv.Plugins[pluginName]
-	if !ok {
-		return nil, fmt.Errorf("controller: plugin %q is not configured for host %q", pluginName, host)
+	cfg, err := c.resolvePluginConfig(ctx, host, pluginName, srv)
+	if err != nil {
+		return nil, fmt.Errorf("controller: %w", err)
 	}
 	p, err := factory(srv, cfg, c.TempDir)
 	if err != nil {
 		return nil, fmt.Errorf("controller: instantiate plugin %q for %q: %w", pluginName, host, err)
 	}
 	return p, nil
+}
+
+// resolvePluginConfig is the plugin-config resolution seam shared by
+// BuildPlugin and runPipeline: a web-configured override in the metadata
+// store (see internal/metadata's plugin_settings table) wins if present,
+// otherwise falls back to inventory.yaml's static plugins.<name>.config
+// block. Checked fresh on every call (both callers already resolve plugin
+// config fresh per call, building a new plugin instance each time - see
+// PluginFactory's doc comment), so a web-entered config change takes
+// effect on the very next job, with no controller restart. Errors only if
+// neither source has anything for (host, pluginName).
+func (c *Controller) resolvePluginConfig(ctx context.Context, host, pluginName string, srv inventory.Server) (*inventory.PluginConfig, error) {
+	configJSON, found, err := c.Metadata.GetPluginSettings(ctx, host, pluginName)
+	if err != nil {
+		return nil, fmt.Errorf("resolve plugin config for %q/%q: %w", host, pluginName, err)
+	}
+	if found {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(configJSON), &raw); err != nil {
+			return nil, fmt.Errorf("stored plugin config for %q/%q is not valid JSON: %w", host, pluginName, err)
+		}
+		return &inventory.PluginConfig{Config: raw}, nil
+	}
+	cfg, ok := srv.Plugins[pluginName]
+	if !ok {
+		return nil, fmt.Errorf("plugin %q is not configured for host %q", pluginName, host)
+	}
+	return cfg, nil
 }
 
 func (c *Controller) logger() *slog.Logger {
@@ -193,9 +222,9 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 // same host. The job is reported failed if any resource failed, but every
 // resource that did succeed still has its snapshot recorded.
 func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventory.Server, factory PluginFactory) error {
-	cfg, ok := srv.Plugins[job.Plugin]
-	if !ok {
-		return fmt.Errorf("plugin %q is not configured for host %q", job.Plugin, job.Host)
+	cfg, err := c.resolvePluginConfig(ctx, job.Host, job.Plugin, srv)
+	if err != nil {
+		return err
 	}
 	p, err := factory(srv, cfg, c.TempDir)
 	if err != nil {

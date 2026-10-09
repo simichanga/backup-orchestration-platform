@@ -78,6 +78,22 @@ CREATE TABLE IF NOT EXISTS events (
 	timestamp DATETIME NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+
+-- Web-editable plugin configuration, keyed by (host, plugin) - checked by
+-- Controller.resolvePluginConfig before falling back to inventory.yaml's
+-- static plugins.<name>.config block, so an edit here takes effect on the
+-- next job with no controller restart. config_json holds the same
+-- map-shaped config a plugin's ParseConfig already expects (e.g.
+-- informix.ParseConfig), serialized as JSON rather than normalized into
+-- columns - every plugin's config shape differs, and this table doesn't
+-- need to know any of them.
+CREATE TABLE IF NOT EXISTS plugin_settings (
+	host TEXT NOT NULL,
+	plugin TEXT NOT NULL,
+	config_json TEXT NOT NULL,
+	updated_at DATETIME NOT NULL,
+	PRIMARY KEY (host, plugin)
+);
 `
 
 // postgresSchema is the same shape as sqliteSchema, adapted for Postgres's
@@ -121,6 +137,14 @@ CREATE TABLE IF NOT EXISTS events (
 	timestamp TIMESTAMPTZ NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp);
+
+CREATE TABLE IF NOT EXISTS plugin_settings (
+	host TEXT NOT NULL,
+	plugin TEXT NOT NULL,
+	config_json TEXT NOT NULL,
+	updated_at TIMESTAMPTZ NOT NULL,
+	PRIMARY KEY (host, plugin)
+);
 `
 
 // Open opens (creating if necessary) the SQLite database at dsn and applies

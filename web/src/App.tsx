@@ -7,6 +7,7 @@ import { EventsPage } from './pages/EventsPage'
 import { HostsPage } from './pages/HostsPage'
 import { JobDetailPage } from './pages/JobDetailPage'
 import { JobsPage } from './pages/JobsPage'
+import { PluginConfigPage } from './pages/PluginConfigPage'
 import { SnapshotsPage } from './pages/SnapshotsPage'
 import { AuthProvider, useAuth } from './state/auth'
 
@@ -20,6 +21,7 @@ function Router() {
       <Route element={<AppShell />}>
         <Route index element={<DashboardPage />} />
         <Route path="hosts" element={<HostsPage />} />
+        <Route path="hosts/:host/plugins/:plugin/config" element={<PluginConfigPage />} />
         <Route path="jobs" element={<JobsPage />} />
         <Route path="jobs/:id" element={<JobDetailPage />} />
         <Route path="snapshots" element={<SnapshotsPage />} />

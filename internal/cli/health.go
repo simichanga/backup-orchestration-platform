@@ -29,7 +29,7 @@ func newHealthCmd(configPath *string) *cobra.Command {
 			}
 			defer a.Close()
 
-			p, err := a.Controller.BuildPlugin(host, pluginName)
+			p, err := a.Controller.BuildPlugin(cmd.Context(), host, pluginName)
 			if err != nil {
 				return err
 			}

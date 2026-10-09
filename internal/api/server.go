@@ -56,6 +56,8 @@ func NewServer(addr string, readTokens, writeTokens []string, ctl *controller.Co
 	mux.Handle("GET /v1/snapshots", authMiddleware(readHashes, listSnapshotsHandler(ctl.Metadata)))
 	mux.Handle("GET /v1/events", authMiddleware(readHashes, listEventsHandler(ctl.Metadata)))
 	mux.Handle("POST /v1/backups", authMiddleware(writeHashes, triggerBackupHandler(ctl, q)))
+	mux.Handle("GET /v1/hosts/{host}/plugins/{plugin}/config", authMiddleware(readHashes, getPluginConfigHandler(ctl.Metadata)))
+	mux.Handle("PUT /v1/hosts/{host}/plugins/{plugin}/config", authMiddleware(writeHashes, setPluginConfigHandler(ctl.Metadata)))
 	if uiHandler != nil {
 		// Unauthenticated at this layer deliberately: the served assets
 		// (HTML/JS/CSS) carry no secrets - the token lives in the browser's

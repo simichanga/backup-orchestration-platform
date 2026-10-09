@@ -67,3 +67,16 @@ export interface TriggerBackupRequest {
   host: string
   plugin: string
 }
+
+// Mirrors internal/api/plugin_config.go's informixConfigDTO exactly. Web
+// configuration is only wired up for the informix plugin today.
+export interface InformixConfig {
+  host: string
+  port: number
+  username: string
+  passwordEnv: string
+  serverName: string
+  database: string
+  tables: string[]
+  agentPath: string
+}
