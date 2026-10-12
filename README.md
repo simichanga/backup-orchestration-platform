@@ -22,8 +22,9 @@ A third plugin, `informix`, backs up IBM Informix databases through a
 separate [ifx-agent](https://github.com/simichanga/informix-odbc) gRPC
 subprocess instead of SSH - see
 [docs/03-getting-started/inventory-reference.md](docs/03-getting-started/inventory-reference.md#informix).
-It can also be configured through the API or web UI instead of
-`inventory.yaml`, with no controller restart - see
+Every registered plugin (`informix`, `postgres`, `filesystem`) can also
+be configured through the API or web UI instead of `inventory.yaml`,
+with no controller restart - see
 [docs/05-operations.md](docs/05-operations.md#web-configurable-plugin-settings).
 
 There's an optional HTTP API (`api.enabled`, off by default, bearer-token

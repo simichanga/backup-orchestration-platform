@@ -12,7 +12,7 @@ import (
 // directory first, so the archive's single top-level entry is just the
 // base name - matching untarCommand's --strip-components=1 on the way
 // back in.
-func tarCommand(cfg filesystemConfig, sourcePath string) string {
+func tarCommand(cfg Config, sourcePath string) string {
 	dir, base := path.Split(strings.TrimSuffix(sourcePath, "/"))
 	if dir == "" {
 		dir = "."

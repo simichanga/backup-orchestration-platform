@@ -13,9 +13,9 @@ func validRawConfig() map[string]interface{} {
 }
 
 func TestParseConfigValid(t *testing.T) {
-	cfg, err := parseConfig(&inventory.PluginConfig{Config: validRawConfig()})
+	cfg, err := ParseConfig(&inventory.PluginConfig{Config: validRawConfig()})
 	if err != nil {
-		t.Fatalf("parseConfig: %v", err)
+		t.Fatalf("ParseConfig: %v", err)
 	}
 	if len(cfg.Paths) != 2 || cfg.Paths[0] != "/var/www" || cfg.Paths[1] != "/etc/myapp" {
 		t.Errorf("Paths = %v, want [/var/www /etc/myapp]", cfg.Paths)
@@ -29,9 +29,9 @@ func TestParseConfigWithExcludes(t *testing.T) {
 	raw := validRawConfig()
 	raw["excludes"] = []interface{}{"*.log", "node_modules"}
 
-	cfg, err := parseConfig(&inventory.PluginConfig{Config: raw})
+	cfg, err := ParseConfig(&inventory.PluginConfig{Config: raw})
 	if err != nil {
-		t.Fatalf("parseConfig: %v", err)
+		t.Fatalf("ParseConfig: %v", err)
 	}
 	if len(cfg.Excludes) != 2 || cfg.Excludes[0] != "*.log" || cfg.Excludes[1] != "node_modules" {
 		t.Errorf("Excludes = %v, want [*.log node_modules]", cfg.Excludes)
@@ -54,15 +54,15 @@ func TestParseConfigErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := validRawConfig()
 			tt.mutate(raw)
-			if _, err := parseConfig(&inventory.PluginConfig{Config: raw}); err == nil {
-				t.Fatalf("parseConfig: expected error, got nil")
+			if _, err := ParseConfig(&inventory.PluginConfig{Config: raw}); err == nil {
+				t.Fatalf("ParseConfig: expected error, got nil")
 			}
 		})
 	}
 }
 
 func TestParseConfigNilConfig(t *testing.T) {
-	if _, err := parseConfig(nil); err == nil {
-		t.Fatalf("parseConfig(nil): expected error, got nil")
+	if _, err := ParseConfig(nil); err == nil {
+		t.Fatalf("ParseConfig(nil): expected error, got nil")
 	}
 }

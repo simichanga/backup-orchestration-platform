@@ -127,8 +127,10 @@ storage integrity -> restore test).
   (`api.tokens_file`/`api.token_env` vs
   `api.write_tokens_file`/`api.write_token_env`) - write is a superset of
   read, unsetting the write scope means no write access exists at all, not
-  "reads still work." Only `POST /v1/backups` mutates; everything else
-  (hosts/jobs/snapshots/events) is read-only. Restore stays CLI-only
+  "reads still work." `POST /v1/backups` and `PUT
+  /v1/hosts/{host}/plugins/{plugin}/config` (per-host plugin settings,
+  `internal/api/plugin_config.go`) are the only mutating endpoints;
+  hosts/jobs/snapshots/events stay read-only. Restore stays CLI-only
   (`bop restore`) - deliberately not exposed over the API yet.
 - **`internal/cli`** - Cobra commands. Phase 1 has no long-running daemon
   for most commands to talk to, so each command except `controller` builds

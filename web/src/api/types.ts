@@ -68,8 +68,9 @@ export interface TriggerBackupRequest {
   plugin: string
 }
 
-// Mirrors internal/api/plugin_config.go's informixConfigDTO exactly. Web
-// configuration is only wired up for the informix plugin today.
+// Mirrors internal/api/plugin_config.go's *ConfigDTO types exactly. Web
+// configuration is wired up for informix, postgres, and filesystem - the
+// three registered BackupPlugin implementations.
 export interface InformixConfig {
   host: string
   port: number
@@ -80,3 +81,17 @@ export interface InformixConfig {
   tables: string[]
   agentPath: string
 }
+
+export interface PostgresConfig {
+  username: string
+  passwordEnv: string
+  databases: string[]
+  container: string
+}
+
+export interface FilesystemConfig {
+  paths: string[]
+  excludes: string[]
+}
+
+export type PluginConfig = InformixConfig | PostgresConfig | FilesystemConfig

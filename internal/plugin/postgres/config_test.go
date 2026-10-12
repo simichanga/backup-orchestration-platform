@@ -17,9 +17,9 @@ func validRawConfig() map[string]interface{} {
 func TestParseConfigValid(t *testing.T) {
 	t.Setenv("PG_TEST_PASSWORD", "supersecret")
 
-	cfg, err := parseConfig(&inventory.PluginConfig{Config: validRawConfig()})
+	cfg, err := ParseConfig(&inventory.PluginConfig{Config: validRawConfig()})
 	if err != nil {
-		t.Fatalf("parseConfig: %v", err)
+		t.Fatalf("ParseConfig: %v", err)
 	}
 	if cfg.Username != "backup_user" {
 		t.Errorf("Username = %q, want backup_user", cfg.Username)
@@ -40,9 +40,9 @@ func TestParseConfigWithContainer(t *testing.T) {
 	raw := validRawConfig()
 	raw["container"] = "my-postgres"
 
-	cfg, err := parseConfig(&inventory.PluginConfig{Config: raw})
+	cfg, err := ParseConfig(&inventory.PluginConfig{Config: raw})
 	if err != nil {
-		t.Fatalf("parseConfig: %v", err)
+		t.Fatalf("ParseConfig: %v", err)
 	}
 	if cfg.Container != "my-postgres" {
 		t.Errorf("Container = %q, want my-postgres", cfg.Container)
@@ -69,15 +69,15 @@ func TestParseConfigErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			raw := validRawConfig()
 			tt.mutate(raw)
-			if _, err := parseConfig(&inventory.PluginConfig{Config: raw}); err == nil {
-				t.Fatalf("parseConfig: expected error, got nil")
+			if _, err := ParseConfig(&inventory.PluginConfig{Config: raw}); err == nil {
+				t.Fatalf("ParseConfig: expected error, got nil")
 			}
 		})
 	}
 }
 
 func TestParseConfigNilConfig(t *testing.T) {
-	if _, err := parseConfig(nil); err == nil {
-		t.Fatalf("parseConfig(nil): expected error, got nil")
+	if _, err := ParseConfig(nil); err == nil {
+		t.Fatalf("ParseConfig(nil): expected error, got nil")
 	}
 }

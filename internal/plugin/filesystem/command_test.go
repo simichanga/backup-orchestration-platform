@@ -6,7 +6,7 @@ import (
 )
 
 func TestTarCommandChangesToParentDirectory(t *testing.T) {
-	cfg := filesystemConfig{}
+	cfg := Config{}
 	got := tarCommand(cfg, "/var/www")
 
 	for _, want := range []string{"'tar'", "'czf'", "'-'", "'-C'", "'/var/'", "'www'"} {
@@ -17,7 +17,7 @@ func TestTarCommandChangesToParentDirectory(t *testing.T) {
 }
 
 func TestTarCommandTrimsTrailingSlash(t *testing.T) {
-	cfg := filesystemConfig{}
+	cfg := Config{}
 	got := tarCommand(cfg, "/var/www/")
 
 	if !strings.Contains(got, "'www'") {
@@ -26,7 +26,7 @@ func TestTarCommandTrimsTrailingSlash(t *testing.T) {
 }
 
 func TestTarCommandIncludesExcludes(t *testing.T) {
-	cfg := filesystemConfig{Excludes: []string{"*.log", "node_modules"}}
+	cfg := Config{Excludes: []string{"*.log", "node_modules"}}
 	got := tarCommand(cfg, "/var/www")
 
 	for _, want := range []string{"--exclude=*.log", "--exclude=node_modules"} {

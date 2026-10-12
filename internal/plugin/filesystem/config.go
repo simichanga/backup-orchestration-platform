@@ -6,39 +6,39 @@ import (
 	"bop/internal/inventory"
 )
 
-// filesystemConfig is a server's filesystem plugin settings, parsed from
+// Config is a server's filesystem plugin settings, parsed from
 // inventory.yaml's plugins.filesystem.config block. Paths are assumed to be
 // directories on the target host (see command.go's tar/untar pair, which
 // wraps and strips a single top-level entry).
-type filesystemConfig struct {
+type Config struct {
 	Paths    []string
 	Excludes []string
 }
 
-func parseConfig(cfg *inventory.PluginConfig) (filesystemConfig, error) {
+func ParseConfig(cfg *inventory.PluginConfig) (Config, error) {
 	if cfg == nil || cfg.Config == nil {
-		return filesystemConfig{}, fmt.Errorf("filesystem: no config provided")
+		return Config{}, fmt.Errorf("filesystem: no config provided")
 	}
 
 	paths, err := toStringSlice(cfg.Config["paths"])
 	if err != nil {
-		return filesystemConfig{}, fmt.Errorf("filesystem: config.paths: %w", err)
+		return Config{}, fmt.Errorf("filesystem: config.paths: %w", err)
 	}
 	if len(paths) == 0 {
-		return filesystemConfig{}, fmt.Errorf("filesystem: config.paths must list at least one path")
+		return Config{}, fmt.Errorf("filesystem: config.paths must list at least one path")
 	}
 	for _, p := range paths {
 		if len(p) == 0 || p[0] != '/' {
-			return filesystemConfig{}, fmt.Errorf("filesystem: config.paths: %q must be an absolute path", p)
+			return Config{}, fmt.Errorf("filesystem: config.paths: %q must be an absolute path", p)
 		}
 	}
 
 	excludes, err := toStringSlice(cfg.Config["excludes"])
 	if err != nil {
-		return filesystemConfig{}, fmt.Errorf("filesystem: config.excludes: %w", err)
+		return Config{}, fmt.Errorf("filesystem: config.excludes: %w", err)
 	}
 
-	return filesystemConfig{Paths: paths, Excludes: excludes}, nil
+	return Config{Paths: paths, Excludes: excludes}, nil
 }
 
 func toStringSlice(v interface{}) ([]string, error) {

@@ -47,7 +47,7 @@ func (f *fakeExecutor) Run(_ context.Context, command string, stdin io.Reader, s
 var sampleGzipArchive = []byte{0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
 
 func TestDiscoverReturnsConfiguredPaths(t *testing.T) {
-	p := &Plugin{cfg: filesystemConfig{Paths: []string{"/var/www", "/etc/myapp"}}}
+	p := &Plugin{cfg: Config{Paths: []string{"/var/www", "/etc/myapp"}}}
 	resources, err := p.Discover(context.Background())
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
@@ -59,7 +59,7 @@ func TestDiscoverReturnsConfiguredPaths(t *testing.T) {
 
 func TestBackupWritesArtifact(t *testing.T) {
 	exec := &fakeExecutor{writeStdout: string(sampleGzipArchive)}
-	p := &Plugin{exec: exec, cfg: filesystemConfig{}, tempDir: t.TempDir()}
+	p := &Plugin{exec: exec, cfg: Config{}, tempDir: t.TempDir()}
 
 	artifact, err := p.Backup(context.Background(), core.Resource{ID: "/var/www"})
 	if err != nil {
@@ -88,7 +88,7 @@ func TestBackupWritesArtifact(t *testing.T) {
 func TestBackupPropagatesExecErrorAndCleansUpFile(t *testing.T) {
 	exec := &fakeExecutor{err: errors.New("connection refused")}
 	dir := t.TempDir()
-	p := &Plugin{exec: exec, cfg: filesystemConfig{}, tempDir: dir}
+	p := &Plugin{exec: exec, cfg: Config{}, tempDir: dir}
 
 	_, err := p.Backup(context.Background(), core.Resource{ID: "/var/www"})
 	if err == nil {

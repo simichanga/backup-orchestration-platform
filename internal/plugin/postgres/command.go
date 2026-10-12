@@ -12,7 +12,7 @@ import (
 // instances in this deployment are containerized. interactive requests the
 // docker exec -i flag, needed only when a command has stdin piped to it
 // (restoreCommand); psql -c and pg_dump don't.
-func execPrefix(cfg postgresConfig, interactive bool) []string {
+func execPrefix(cfg Config, interactive bool) []string {
 	if cfg.Container == "" {
 		return []string{"env", "PGPASSWORD=" + cfg.Password}
 	}
@@ -26,7 +26,7 @@ func execPrefix(cfg postgresConfig, interactive bool) []string {
 // dumpCommand builds the remote command to dump database via pg_dump.
 // pg_dump's default plain-text SQL output format is used deliberately, so
 // restore only ever needs psql, not pg_restore.
-func dumpCommand(cfg postgresConfig, database string) string {
+func dumpCommand(cfg Config, database string) string {
 	args := append(execPrefix(cfg, false), "pg_dump", "-U", cfg.Username, database)
 	return shellcmd.Build(args)
 }
@@ -34,7 +34,7 @@ func dumpCommand(cfg postgresConfig, database string) string {
 // restoreCommand builds the remote command to restore database from a
 // plain-text SQL dump piped in on stdin. docker exec needs -i to keep
 // stdin open when a container is involved.
-func restoreCommand(cfg postgresConfig, database string) string {
+func restoreCommand(cfg Config, database string) string {
 	args := append(execPrefix(cfg, true), "psql", "-U", cfg.Username, database)
 	return shellcmd.Build(args)
 }
@@ -46,12 +46,12 @@ func restoreCommand(cfg postgresConfig, database string) string {
 // being dropped must not be the connection's own database - which every
 // Postgres server has. -v ON_ERROR_STOP=1 makes psql exit non-zero (and
 // print the SQL error to stderr) on failure instead of continuing past it.
-func createDatabaseCommand(cfg postgresConfig, database string) string {
+func createDatabaseCommand(cfg Config, database string) string {
 	args := append(execPrefix(cfg, false), "psql", "-U", cfg.Username, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", createDatabaseSQL(database))
 	return shellcmd.Build(args)
 }
 
-func dropDatabaseCommand(cfg postgresConfig, database string) string {
+func dropDatabaseCommand(cfg Config, database string) string {
 	args := append(execPrefix(cfg, false), "psql", "-U", cfg.Username, "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", dropDatabaseSQL(database))
 	return shellcmd.Build(args)
 }

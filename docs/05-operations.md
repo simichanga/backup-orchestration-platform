@@ -139,9 +139,10 @@ endpoints above are the only mutating endpoints in this pass.
 ### Web-configurable plugin settings
 
 Most plugins are configured once, in `inventory.yaml`, before `bop
-controller` starts. The `informix` plugin can instead be configured (or
-reconfigured) through the API or web UI, while the controller keeps
-running, with no restart needed:
+controller` starts. Any of the three registered plugins - `informix`,
+`postgres`, `filesystem` - can instead be configured (or reconfigured)
+through the API or web UI, while the controller keeps running, with no
+restart needed:
 
 ```
 curl -X PUT http://127.0.0.1:9091/v1/hosts/prod-informix/plugins/informix/config \
@@ -157,28 +158,56 @@ curl -X PUT http://127.0.0.1:9091/v1/hosts/prod-informix/plugins/informix/config
     "tables": ["customers", "orders"],
     "agentPath": "/usr/local/bin/ifx-agent"
   }'
+
+curl -X PUT http://127.0.0.1:9091/v1/hosts/prod-db/plugins/postgres/config \
+  -H "Authorization: Bearer $WRITE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "backup_user",
+    "passwordEnv": "PG_BACKUP_PASSWORD",
+    "databases": ["appdb", "reporting"],
+    "container": "my-postgres"
+  }'
+
+curl -X PUT http://127.0.0.1:9091/v1/hosts/prod-fs/plugins/filesystem/config \
+  -H "Authorization: Bearer $WRITE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "paths": ["/var/lib/app", "/etc/app"],
+    "excludes": ["*.tmp"]
+  }'
 ```
 
-The web UI exposes the same thing as a form: open `/hosts/{host}/plugins/informix/config`
-in the ops console (linked from each host row on the Hosts page).
+The web UI exposes the same thing as a form, one per plugin: open
+`/hosts/{host}/plugins/{plugin}/config` in the ops console (linked from
+each host row on the Hosts page).
 
 A saved config is stored in the metadata database (table
 `plugin_settings`, keyed by host and plugin) and takes effect on the
 very next backup for that host - the controller resolves a plugin's
-config fresh on every job, checking the database first and falling
-back to the `plugins.informix.config` block in `inventory.yaml` only
-if nothing has been saved through the API. This means a host can have
-no static informix config in `inventory.yaml` at all (just a
-`plugins: { informix: null }` placeholder, so the host entry itself is
-valid) and still back up informix once a config is PUT through the
-API.
+config fresh on every job, checking the database first and falling back
+to that plugin's `config:` block in `inventory.yaml` only if nothing has
+been saved through the API. This means a host can have no static config
+for a plugin in `inventory.yaml` at all (just a `plugins: { informix:
+null }` placeholder, so the host entry itself is valid) and still back
+up that plugin once a config is PUT through the API.
 
-As with every other secret in BOP, the stored config holds a
+As with every other secret in BOP, a stored config holds a
 `password_env` variable name, never a plaintext password - see
 [Secrets Management](03-getting-started/configuration.md#secrets-management).
+The "no restart needed" claim above has one asterisk: `password_env`
+only *names* a variable, it doesn't set one - informix and postgres
+validate the PUT by actually resolving that variable in the
+controller's own environment, so pointing a host at a `password_env`
+that isn't already set there fails validation with a clear "environment
+variable ... is not set" error until the controller process itself is
+restarted with it set. filesystem has no secrets, so this doesn't apply
+to it.
 
-Only `informix` is wired up today. A PUT for any other plugin name
-returns `400 Bad Request`.
+`informix`, `postgres`, and `filesystem` are wired up today - every
+registered `BackupPlugin`. A PUT for any other plugin name (e.g.
+`shellcmd`, a shared command-quoting helper rather than a registered
+plugin) returns `400 Bad Request`.
 
 ### Read vs write tokens
 

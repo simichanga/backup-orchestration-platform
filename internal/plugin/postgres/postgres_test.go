@@ -53,7 +53,7 @@ func (f *fakeExecutor) Run(_ context.Context, command string, stdin io.Reader, s
 const samplePgDump = "-- PostgreSQL database dump\n\nCREATE TABLE foo (id int);\n"
 
 func TestDiscoverReturnsConfiguredDatabases(t *testing.T) {
-	p := &Plugin{cfg: postgresConfig{Databases: []string{"myapp", "otherdb"}}}
+	p := &Plugin{cfg: Config{Databases: []string{"myapp", "otherdb"}}}
 	resources, err := p.Discover(context.Background())
 	if err != nil {
 		t.Fatalf("Discover: %v", err)
@@ -65,7 +65,7 @@ func TestDiscoverReturnsConfiguredDatabases(t *testing.T) {
 
 func TestBackupWritesArtifact(t *testing.T) {
 	exec := &fakeExecutor{writeStdout: samplePgDump}
-	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "backup_user", Password: "secret"}, tempDir: t.TempDir()}
+	p := &Plugin{exec: exec, cfg: Config{Username: "backup_user", Password: "secret"}, tempDir: t.TempDir()}
 
 	artifact, err := p.Backup(context.Background(), core.Resource{ID: "myapp"})
 	if err != nil {
@@ -94,7 +94,7 @@ func TestBackupWritesArtifact(t *testing.T) {
 func TestBackupPropagatesExecErrorAndCleansUpFile(t *testing.T) {
 	exec := &fakeExecutor{err: errors.New("connection refused")}
 	dir := t.TempDir()
-	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "u", Password: "p"}, tempDir: dir}
+	p := &Plugin{exec: exec, cfg: Config{Username: "u", Password: "p"}, tempDir: dir}
 
 	_, err := p.Backup(context.Background(), core.Resource{ID: "myapp"})
 	if err == nil {
@@ -157,7 +157,7 @@ func TestRestoreSendsArtifactContentAsStdin(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "u", Password: "p"}}
+	p := &Plugin{exec: exec, cfg: Config{Username: "u", Password: "p"}}
 	if err := p.Restore(context.Background(), core.Artifact{ResourceID: "myapp", Path: path}); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestRestoreTestProvisionsAndDropsScratchDatabase(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "u", Password: "p"}}
+	p := &Plugin{exec: exec, cfg: Config{Username: "u", Password: "p"}}
 	if err := p.Restore(context.Background(), core.Artifact{ResourceID: "myapp-bop-verify", Path: path}); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestRestoreTestRefusesPreexistingDatabase(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "u", Password: "p"}}
+	p := &Plugin{exec: exec, cfg: Config{Username: "u", Password: "p"}}
 	err := p.Restore(context.Background(), core.Artifact{ResourceID: "myapp-bop-verify", Path: path})
 	if err == nil {
 		t.Fatalf("Restore: expected an error, got nil")
@@ -257,7 +257,7 @@ func TestRestoreTestDropsScratchDatabaseEvenWhenRestoreFails(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	p := &Plugin{exec: exec, cfg: postgresConfig{Username: "u", Password: "p"}}
+	p := &Plugin{exec: exec, cfg: Config{Username: "u", Password: "p"}}
 	err := p.Restore(context.Background(), core.Artifact{ResourceID: "myapp-bop-verify", Path: path})
 	if err == nil {
 		t.Fatalf("Restore: expected an error, got nil")

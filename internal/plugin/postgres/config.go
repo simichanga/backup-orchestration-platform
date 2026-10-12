@@ -7,7 +7,7 @@ import (
 	"bop/internal/inventory"
 )
 
-type postgresConfig struct {
+type Config struct {
 	Username  string
 	Password  string
 	Databases []string
@@ -18,36 +18,36 @@ type postgresConfig struct {
 	Container string
 }
 
-func parseConfig(cfg *inventory.PluginConfig) (postgresConfig, error) {
+func ParseConfig(cfg *inventory.PluginConfig) (Config, error) {
 	if cfg == nil || cfg.Config == nil {
-		return postgresConfig{}, fmt.Errorf("postgres: no config provided")
+		return Config{}, fmt.Errorf("postgres: no config provided")
 	}
 
 	username, _ := cfg.Config["username"].(string)
 	if username == "" {
-		return postgresConfig{}, fmt.Errorf("postgres: config.username is required")
+		return Config{}, fmt.Errorf("postgres: config.username is required")
 	}
 
 	passwordEnv, _ := cfg.Config["password_env"].(string)
 	if passwordEnv == "" {
-		return postgresConfig{}, fmt.Errorf("postgres: config.password_env is required")
+		return Config{}, fmt.Errorf("postgres: config.password_env is required")
 	}
 	password := os.Getenv(passwordEnv)
 	if password == "" {
-		return postgresConfig{}, fmt.Errorf("postgres: environment variable %q (password_env) is not set", passwordEnv)
+		return Config{}, fmt.Errorf("postgres: environment variable %q (password_env) is not set", passwordEnv)
 	}
 
 	databases, err := toStringSlice(cfg.Config["databases"])
 	if err != nil {
-		return postgresConfig{}, fmt.Errorf("postgres: config.databases: %w", err)
+		return Config{}, fmt.Errorf("postgres: config.databases: %w", err)
 	}
 	if len(databases) == 0 {
-		return postgresConfig{}, fmt.Errorf("postgres: config.databases must list at least one database")
+		return Config{}, fmt.Errorf("postgres: config.databases must list at least one database")
 	}
 
 	container, _ := cfg.Config["container"].(string)
 
-	return postgresConfig{
+	return Config{
 		Username:  username,
 		Password:  password,
 		Databases: databases,

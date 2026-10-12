@@ -6,7 +6,7 @@ import (
 )
 
 func TestDumpCommandDirect(t *testing.T) {
-	cfg := postgresConfig{Username: "backup_user", Password: "secret"}
+	cfg := Config{Username: "backup_user", Password: "secret"}
 	got := dumpCommand(cfg, "myapp")
 
 	for _, want := range []string{"'pg_dump'", "'-U'", "'backup_user'", "'myapp'", "PGPASSWORD=secret"} {
@@ -20,7 +20,7 @@ func TestDumpCommandDirect(t *testing.T) {
 }
 
 func TestDumpCommandContainer(t *testing.T) {
-	cfg := postgresConfig{Username: "backup_user", Password: "secret", Container: "my-postgres"}
+	cfg := Config{Username: "backup_user", Password: "secret", Container: "my-postgres"}
 	got := dumpCommand(cfg, "myapp")
 
 	for _, want := range []string{"'docker'", "'exec'", "'my-postgres'", "'pg_dump'", "'-U'", "'backup_user'", "'myapp'"} {
@@ -31,7 +31,7 @@ func TestDumpCommandContainer(t *testing.T) {
 }
 
 func TestRestoreCommandContainerUsesInteractiveFlag(t *testing.T) {
-	cfg := postgresConfig{Username: "backup_user", Password: "secret", Container: "my-postgres"}
+	cfg := Config{Username: "backup_user", Password: "secret", Container: "my-postgres"}
 	got := restoreCommand(cfg, "myapp")
 
 	if !strings.Contains(got, "'docker' 'exec' '-i'") {
@@ -43,7 +43,7 @@ func TestRestoreCommandContainerUsesInteractiveFlag(t *testing.T) {
 }
 
 func TestCreateDatabaseCommandDirect(t *testing.T) {
-	cfg := postgresConfig{Username: "backup_user", Password: "secret"}
+	cfg := Config{Username: "backup_user", Password: "secret"}
 	got := createDatabaseCommand(cfg, "myapp-bop-verify")
 
 	for _, want := range []string{"'psql'", "'-U'", "'backup_user'", "'-d'", "'postgres'", `CREATE DATABASE "myapp-bop-verify"`, "ON_ERROR_STOP=1"} {
@@ -57,7 +57,7 @@ func TestCreateDatabaseCommandDirect(t *testing.T) {
 }
 
 func TestCreateDatabaseCommandContainer(t *testing.T) {
-	cfg := postgresConfig{Username: "backup_user", Password: "secret", Container: "my-postgres"}
+	cfg := Config{Username: "backup_user", Password: "secret", Container: "my-postgres"}
 	got := createDatabaseCommand(cfg, "myapp-bop-verify")
 
 	for _, want := range []string{"'docker'", "'exec'", "'my-postgres'", `CREATE DATABASE "myapp-bop-verify"`} {
@@ -71,7 +71,7 @@ func TestCreateDatabaseCommandContainer(t *testing.T) {
 }
 
 func TestDropDatabaseCommand(t *testing.T) {
-	cfg := postgresConfig{Username: "backup_user", Password: "secret"}
+	cfg := Config{Username: "backup_user", Password: "secret"}
 	got := dropDatabaseCommand(cfg, "myapp-bop-verify")
 
 	if !strings.Contains(got, `DROP DATABASE "myapp-bop-verify"`) {
@@ -91,7 +91,7 @@ func TestCreateDatabaseSQLEscapesEmbeddedQuotes(t *testing.T) {
 }
 
 func TestDumpCommandQuotesPasswordWithSpecialCharacters(t *testing.T) {
-	cfg := postgresConfig{Username: "backup_user", Password: `p'ss word`}
+	cfg := Config{Username: "backup_user", Password: `p'ss word`}
 	got := dumpCommand(cfg, "myapp")
 
 	// The password must appear shell-escaped, not verbatim, or a password

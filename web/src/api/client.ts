@@ -1,4 +1,4 @@
-import type { BopEvent, Host, InformixConfig, Job, Snapshot, TriggerBackupRequest } from './types'
+import type { BopEvent, Host, Job, PluginConfig, Snapshot, TriggerBackupRequest } from './types'
 
 const STORAGE_KEY = 'bop.token'
 
@@ -99,11 +99,13 @@ export const api = {
     request<Job>('/v1/backups', { method: 'POST', body: JSON.stringify(req) }, { suppressGlobalUnauthorized: true }),
   // getPluginConfig rejects with a 404 ApiError when nothing is stored yet
   // (a host being configured for the first time) - callers treat that as
-  // "start from an empty form," not a page-level error.
-  getPluginConfig: (host: string, plugin: string) =>
-    request<InformixConfig>(`/v1/hosts/${encodeURIComponent(host)}/plugins/${encodeURIComponent(plugin)}/config`),
-  setPluginConfig: (host: string, plugin: string, cfg: InformixConfig) =>
-    request<InformixConfig>(
+  // "start from an empty form," not a page-level error. T is the specific
+  // plugin's config shape (InformixConfig, PostgresConfig, ...) - the
+  // caller already knows which plugin it's asking about, so it picks T.
+  getPluginConfig: <T extends PluginConfig>(host: string, plugin: string) =>
+    request<T>(`/v1/hosts/${encodeURIComponent(host)}/plugins/${encodeURIComponent(plugin)}/config`),
+  setPluginConfig: <T extends PluginConfig>(host: string, plugin: string, cfg: T) =>
+    request<T>(
       `/v1/hosts/${encodeURIComponent(host)}/plugins/${encodeURIComponent(plugin)}/config`,
       { method: 'PUT', body: JSON.stringify(cfg) },
       { suppressGlobalUnauthorized: true },

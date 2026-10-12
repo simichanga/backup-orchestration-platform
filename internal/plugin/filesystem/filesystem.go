@@ -28,7 +28,7 @@ var gzipMagic = []byte{0x1f, 0x8b}
 
 type Plugin struct {
 	exec    sshexec.Executor
-	cfg     filesystemConfig
+	cfg     Config
 	tempDir string
 }
 
@@ -38,7 +38,7 @@ type Plugin struct {
 // ssh.known_hosts_file, verified on every connection (see internal/sshexec).
 func NewFactory(knownHostsFile string) func(srv inventory.Server, cfg *inventory.PluginConfig, tempDir string) (plugin.BackupPlugin, error) {
 	return func(srv inventory.Server, cfg *inventory.PluginConfig, tempDir string) (plugin.BackupPlugin, error) {
-		fsCfg, err := parseConfig(cfg)
+		fsCfg, err := ParseConfig(cfg)
 		if err != nil {
 			return nil, err
 		}
