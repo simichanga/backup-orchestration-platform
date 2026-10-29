@@ -22,6 +22,7 @@ import (
 	"bop/internal/metrics"
 	"bop/internal/plugin/filesystem"
 	"bop/internal/plugin/informix"
+	"bop/internal/plugin/logs"
 	"bop/internal/plugin/mariadb"
 	"bop/internal/plugin/postgres"
 	"bop/internal/queue"
@@ -113,6 +114,7 @@ func buildApp(configPath string) (*app, error) {
 	ctl.RegisterPlugin("filesystem", filesystem.NewFactory(cfg.SSH.KnownHostsFile))
 	ctl.RegisterPlugin("informix", informix.NewFactory())
 	ctl.RegisterPlugin("mariadb", mariadb.NewFactory(cfg.SSH.KnownHostsFile))
+	ctl.RegisterPlugin("logs", logs.NewFactory(cfg.SSH.KnownHostsFile))
 
 	q := queue.NewMemory(queueCapacity)
 

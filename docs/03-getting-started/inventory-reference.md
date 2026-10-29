@@ -125,6 +125,34 @@ each other. Restore-test works as for `postgres` (scratch
 `<database>-bop-verify` database, created and dropped on the target
 server).
 
+### `logs`
+
+Backs up host logs over SSH: the systemd journal (where rsyslog's
+`/var/log/syslog` comes from) and Docker container logs, as plain text.
+
+| Key                  | Type           | Required | Description |
+|----------------------|----------------|----------|--------------|
+| `journal`            | bool           | one of these two | Back up the journal (`journalctl -o short-iso-precise`). The SSH user needs `systemd-journal` (or `adm`) group membership. |
+| `containers`         | list of string | one of these two | Container name patterns (`path.Match` syntax, `"*"` = all, running or stopped). Matched against `docker ps -a` on every run, so new containers are picked up automatically. The SSH user needs docker access. |
+| `exclude_containers` | list of string | no       | Patterns removed from `containers`' matches. |
+| `window`             | duration       | no, default `72h` | How far back each run reaches. |
+
+Resources are `journal` and `container-<name>`, one snapshot each per run.
+Each run captures a rolling window rather than tracking a cursor:
+stateless, and gap-free as long as fewer consecutive runs are missed than
+the window spans. Consecutive snapshots overlap, which restic
+deduplicates, so a wider window costs dump time, not repository space.
+
+Logs are not restorable in place: `Restore` always fails, so never set
+`verification:` on a server using this plugin. Read a backed-up log with
+`bop restore --snapshot <id> --target <file>`.
+
+Retention caveat: `forget --keep-daily N` keeps the last N days *that
+have snapshots*, per resource. A removed or renamed container's snapshots
+stop being replaced and are kept indefinitely; `forget` them by hand
+(`restic forget --tag resource:container-<name> ...`) when no longer
+wanted.
+
 ### `filesystem`
 
 Connects over SSH and streams a gzip-compressed tar archive of each

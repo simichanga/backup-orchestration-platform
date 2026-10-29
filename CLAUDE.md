@@ -70,7 +70,9 @@ concrete adapters behind them:
   Methods: `Discover`, `Backup`, `Restore`, `Verify` (structural sanity
   check, not storage integrity), `Health`, `Metadata`. Implementations:
   `internal/plugin/postgres`, `internal/plugin/mariadb`,
-  `internal/plugin/filesystem`, `internal/plugin/informix`
+  `internal/plugin/filesystem`, `internal/plugin/informix`,
+  `internal/plugin/logs` (journal + container logs; backup-only, its
+  `Restore` always fails)
   (`internal/plugin/shellcmd` is a shared quoting helper, not a plugin). Phase 1: compiled directly into the binary,
   registered in-process via `ctl.RegisterPlugin(...)` in
   `internal/cli/wiring.go`. The controller never contains source-specific
