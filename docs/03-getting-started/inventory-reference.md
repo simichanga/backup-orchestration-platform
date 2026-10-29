@@ -96,6 +96,35 @@ afterward - see
 [Writing a Plugin](../04-writing-plugins.md#restore-test-support) for the
 ownership-safety contract this relies on.
 
+### `mariadb`
+
+The MariaDB counterpart of `postgres`: connects over SSH and runs
+`mariadb-dump`/`mariadb` on the host, or inside a container via
+`docker exec` when `container` is set. Needs the `mariadb-*` client
+binaries (MariaDB 10.4.6+; the official images ship them).
+
+| Key                      | Type          | Required | Description |
+|--------------------------|---------------|----------|--------------|
+| `username`               | string        | yes      | MariaDB user to connect as. |
+| `password_env`           | string        | one of these two | Name of an environment variable in the `bop` process's environment holding the password - same convention as `postgres`. |
+| `password_container_env` | string        | one of these two | Name of an environment variable *inside* `container` holding the password, e.g. the official image's `MARIADB_ROOT_PASSWORD` (or legacy `MYSQL_ROOT_PASSWORD`). The password is expanded inside the container straight into `MYSQL_PWD`, so it never reaches the controller or any command line. Requires `container`. |
+| `databases`              | list of string| yes, at least one | Database names to back up, one resource each. |
+| `container`              | string        | no       | Docker container name. |
+
+Dumps use `--single-transaction` (a consistent, non-locking snapshot for
+InnoDB tables) plus `--routines --triggers --events`. The database is not
+named via `--databases`, so the dump carries no `USE` statement and can
+be restored into any database name. The structural `Verify` also checks
+for `mariadb-dump`'s closing `-- Dump completed` line, catching a
+truncated dump.
+
+The plugin config is per server, so two MariaDB containers on one host
+are two inventory servers sharing the same `host` (e.g. `prod-app` and
+`prod-billing`). Retention is scoped by server name, so they don't prune
+each other. Restore-test works as for `postgres` (scratch
+`<database>-bop-verify` database, created and dropped on the target
+server).
+
 ### `filesystem`
 
 Connects over SSH and streams a gzip-compressed tar archive of each

@@ -27,6 +27,12 @@ be configured through the API or web UI instead of `inventory.yaml`,
 with no controller restart - see
 [docs/05-operations.md](docs/05-operations.md#web-configurable-plugin-settings).
 
+A fourth plugin, `mariadb`, mirrors `postgres` for MariaDB (direct or
+`docker exec`, `mariadb-dump --single-transaction`) and can read the
+password from the database container's own environment instead of BOP's
+- see [the inventory reference](docs/03-getting-started/inventory-reference.md#mariadb).
+It is configured via `inventory.yaml` only (no web UI form yet).
+
 There's an optional HTTP API (`api.enabled`, off by default, bearer-token
 auth) covering hosts/jobs/snapshots/events (read-only tokens) plus
 triggering an ad-hoc backup (`POST /v1/backups`, a separate write-scoped
