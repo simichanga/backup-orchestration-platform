@@ -1,0 +1,21 @@
+# systemd --user unit for the BOP controller, installed by
+# deploy/bootstrap.sh into ~/.config/systemd/user/. A user unit (rather
+# than docs/05-operations.md's system unit) because the deploy hosts give
+# the BOP account no sudo; `loginctl enable-linger` keeps it running
+# without a login session and starts it at boot.
+[Unit]
+Description=Backup Orchestration Platform - controller
+Documentation=https://github.com/simichanga/backup-orchestration-platform/tree/main/deploy
+
+[Service]
+# restic is invoked by name, and lives in ~/.local/bin (bootstrap.sh).
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+WorkingDirectory=%h/bop
+ExecStart=%h/bop/current/bop controller --config %h/bop/config.yaml
+Restart=on-failure
+RestartSec=10s
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target
