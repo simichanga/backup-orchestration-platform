@@ -33,6 +33,10 @@ password from the database container's own environment instead of BOP's
 - see [the inventory reference](docs/03-getting-started/inventory-reference.md#mariadb).
 It is configured via `inventory.yaml` only (no web UI form yet).
 
+A `logs` plugin backs up the systemd journal and Docker container logs
+(a rolling window per run, containers discovered by name pattern) - see
+[the inventory reference](docs/03-getting-started/inventory-reference.md#logs).
+
 There's an optional HTTP API (`api.enabled`, off by default, bearer-token
 auth) covering hosts/jobs/snapshots/events (read-only tokens) plus
 triggering an ad-hoc backup (`POST /v1/backups`, a separate write-scoped

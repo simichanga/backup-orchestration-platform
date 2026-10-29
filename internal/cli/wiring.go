@@ -22,6 +22,7 @@ import (
 	"bop/internal/metrics"
 	"bop/internal/plugin/filesystem"
 	"bop/internal/plugin/informix"
+	"bop/internal/plugin/logs"
 	"bop/internal/plugin/mariadb"
 	"bop/internal/plugin/postgres"
 	"bop/internal/queue"
@@ -93,6 +94,17 @@ func buildApp(configPath string) (*app, error) {
 
 	ctl := controller.New(inv, md, sp, cfg.Verification, cfg.Controller.TempDir, cfg.Controller.JobTimeout)
 	ctl.Logger = logger
+	for name, repo := range cfg.Storage.Repositories {
+		ctl.RegisterStorage(name, storage.NewResticProvider("restic", repo.Repository, repo.PasswordFile, repo.PasswordEnv, repo.ExtraArgs))
+	}
+	// Fail at startup, not at 2am: a typo in a server's storage: key would
+	// otherwise only surface when its first scheduled job runs.
+	for host := range inv.Servers {
+		if _, err := ctl.StorageFor(host); err != nil {
+			md.Close()
+			return nil, err
+		}
+	}
 
 	// Metrics subscribe to the same event stream as logging, so recording
 	// them requires zero extra instrumentation calls inside the controller
@@ -113,6 +125,7 @@ func buildApp(configPath string) (*app, error) {
 	ctl.RegisterPlugin("filesystem", filesystem.NewFactory(cfg.SSH.KnownHostsFile))
 	ctl.RegisterPlugin("informix", informix.NewFactory())
 	ctl.RegisterPlugin("mariadb", mariadb.NewFactory(cfg.SSH.KnownHostsFile))
+	ctl.RegisterPlugin("logs", logs.NewFactory(cfg.SSH.KnownHostsFile))
 
 	q := queue.NewMemory(queueCapacity)
 

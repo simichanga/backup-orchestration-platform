@@ -23,6 +23,14 @@ storage:
     # password_env: RESTIC_REPO_PASSWORD
     extra_args: []           # Additional restic arguments (e.g., --verbose)
     concurrency: 2
+  # Optional additional named repositories (same keys as restic: above).
+  # An inventory server selects one with `storage: <name>`; servers
+  # without it use the default restic: repository. Names: lowercase
+  # letters, digits, - and _.
+  # repositories:
+  #   logs:
+  #     repository: sftp:bop-logs:/srv/bop/prod
+  #     password_file: /etc/bop/restic-password-logs.txt
 
 # Controller behaviour
 controller:

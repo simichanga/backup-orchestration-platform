@@ -295,3 +295,48 @@ metadata:
 		})
 	}
 }
+
+func TestLoadNamedRepositories(t *testing.T) {
+	path := writeConfigFile(t, `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/db
+    password_file: /etc/bop/db-password
+  repositories:
+    logs:
+      repository: sftp:logs-host:/srv/bop/logs
+      password_file: /etc/bop/logs-password
+`)
+
+	cfg, err := Load(path, nil)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	logs, ok := cfg.Storage.Repositories["logs"]
+	if !ok || logs.Repository != "sftp:logs-host:/srv/bop/logs" || logs.PasswordFile != "/etc/bop/logs-password" {
+		t.Errorf("Storage.Repositories = %+v, want a logs entry", cfg.Storage.Repositories)
+	}
+}
+
+func TestLoadNamedRepositoryValidation(t *testing.T) {
+	for name, repo := range map[string]string{
+		"missing repository": "      password_file: /etc/bop/p\n",
+		"missing password":   "      repository: /mnt/x\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := writeConfigFile(t, `
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/db
+    password_file: /etc/bop/db-password
+  repositories:
+    logs:
+`+repo)
+			if _, err := Load(path, nil); err == nil {
+				t.Fatal("Load: expected a validation error for storage.repositories.logs, got nil")
+			}
+		})
+	}
+}

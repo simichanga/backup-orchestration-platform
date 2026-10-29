@@ -40,6 +40,7 @@ hostname.
 | `retention`    | object | yes                                | Daily/weekly/monthly/yearly counts - see [Retention](#retention). |
 | `schedule`     | string | no                                 | A standard 5-field cron expression (e.g. `"0 3 * * *"`). Omit to leave this server manual-only, triggered with `bop backup`. Validated at `bop controller` startup - an invalid expression is a startup error, not a silently-never-firing schedule. |
 | `verification` | object | no                                 | Per-host override of `config.yaml`'s global `verification` block - see [Verification Override](#verification-override). |
+| `storage`      | string | no                                 | Name of a `config.yaml` `storage.repositories` entry to keep this server's backups in, instead of the default `storage.restic` repository (e.g. host logs on a different machine than database backups). Checked at startup: an undefined name fails `bop controller`/`bop backup` immediately. `bop restore` finds the right repository from the snapshot's server (or `--host`). |
 
 The `host` connects to whatever the SSH server's own host key verification
 demands - see `config.yaml`'s `ssh.known_hosts_file`
@@ -124,6 +125,34 @@ are two inventory servers sharing the same `host` (e.g. `prod-app` and
 each other. Restore-test works as for `postgres` (scratch
 `<database>-bop-verify` database, created and dropped on the target
 server).
+
+### `logs`
+
+Backs up host logs over SSH: the systemd journal (where rsyslog's
+`/var/log/syslog` comes from) and Docker container logs, as plain text.
+
+| Key                  | Type           | Required | Description |
+|----------------------|----------------|----------|--------------|
+| `journal`            | bool           | one of these two | Back up the journal (`journalctl -o short-iso-precise`). The SSH user needs `systemd-journal` (or `adm`) group membership. |
+| `containers`         | list of string | one of these two | Container name patterns (`path.Match` syntax, `"*"` = all, running or stopped). Matched against `docker ps -a` on every run, so new containers are picked up automatically. The SSH user needs docker access. |
+| `exclude_containers` | list of string | no       | Patterns removed from `containers`' matches. |
+| `window`             | duration       | no, default `72h` | How far back each run reaches. |
+
+Resources are `journal` and `container-<name>`, one snapshot each per run.
+Each run captures a rolling window rather than tracking a cursor:
+stateless, and gap-free as long as fewer consecutive runs are missed than
+the window spans. Consecutive snapshots overlap, which restic
+deduplicates, so a wider window costs dump time, not repository space.
+
+Logs are not restorable in place: `Restore` always fails, so never set
+`verification:` on a server using this plugin. Read a backed-up log with
+`bop restore --snapshot <id> --target <file>`.
+
+Retention caveat: `forget --keep-daily N` keeps the last N days *that
+have snapshots*, per resource. A removed or renamed container's snapshots
+stop being replaced and are kept indefinitely; `forget` them by hand
+(`restic forget --tag resource:container-<name> ...`) when no longer
+wanted.
 
 ### `filesystem`
 

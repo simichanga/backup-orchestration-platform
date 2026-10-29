@@ -8,6 +8,7 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -34,6 +35,12 @@ type Config struct {
 type StorageConfig struct {
 	Provider string       `mapstructure:"provider"`
 	Restic   ResticConfig `mapstructure:"restic"`
+	// Repositories are additional, named restic repositories that an
+	// inventory server can select with its `storage:` key instead of the
+	// default Restic one - e.g. host logs kept on a different machine than
+	// database backups. Each has its own password. Names are lowercase
+	// (the config loader lowercases map keys).
+	Repositories map[string]ResticConfig `mapstructure:"repositories"`
 }
 
 type ResticConfig struct {
@@ -203,16 +210,16 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("storage.provider: unsupported value %q", c.Storage.Provider)
 	}
 	if c.Storage.Provider == "restic" {
-		if c.Storage.Restic.Repository == "" {
-			return fmt.Errorf("storage.restic.repository: required when storage.provider is restic")
+		if err := c.Storage.Restic.validate("storage.restic"); err != nil {
+			return err
 		}
-		hasFile := c.Storage.Restic.PasswordFile != ""
-		hasEnv := c.Storage.Restic.PasswordEnv != ""
-		if hasFile && hasEnv {
-			return fmt.Errorf("storage.restic: password_file and password_env are mutually exclusive")
+	}
+	for name, repo := range c.Storage.Repositories {
+		if !repositoryName.MatchString(name) {
+			return fmt.Errorf("storage.repositories: invalid name %q (lowercase letters, digits, - and _)", name)
 		}
-		if !hasFile && !hasEnv {
-			return fmt.Errorf("storage.restic: one of password_file or password_env is required")
+		if err := repo.validate("storage.repositories." + name); err != nil {
+			return err
 		}
 	}
 	if c.API.Enabled {
@@ -244,6 +251,27 @@ func (c *Config) Validate() error {
 	}
 	if !validLogFormats[c.Logging.Format] {
 		return fmt.Errorf("logging.format: unsupported value %q", c.Logging.Format)
+	}
+	return nil
+}
+
+// repositoryName restricts storage.repositories keys to what an inventory
+// server's `storage:` key can reference unambiguously.
+var repositoryName = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
+
+// validate checks one restic repository definition; field is its config
+// path, for error messages.
+func (r ResticConfig) validate(field string) error {
+	if r.Repository == "" {
+		return fmt.Errorf("%s.repository: required", field)
+	}
+	hasFile := r.PasswordFile != ""
+	hasEnv := r.PasswordEnv != ""
+	if hasFile && hasEnv {
+		return fmt.Errorf("%s: password_file and password_env are mutually exclusive", field)
+	}
+	if !hasFile && !hasEnv {
+		return fmt.Errorf("%s: one of password_file or password_env is required", field)
 	}
 	return nil
 }
