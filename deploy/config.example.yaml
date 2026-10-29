@@ -1,0 +1,49 @@
+# ~/bop/config.yaml on a deploy host - see deploy/README.md. Replace
+# <machine> with the host's logical name (e.g. simi-prod); it names this
+# host's own repository on the vault.
+
+inventory: /home/<user>/bop/inventory.yaml
+
+storage:
+  provider: restic
+  restic:
+    # One repository per source machine: its own password, and restic's
+    # exclusive prune lock never contends with another controller.
+    # `bop-vault` is the ~/.ssh/config alias bootstrap.sh writes.
+    repository: sftp:bop-vault:/home/<vault-user>/bop/<machine>
+    password_file: /home/<user>/bop/restic-password
+
+controller:
+  job_timeout: 1h
+  temp_dir: /home/<user>/bop/data/tmp
+
+scheduler:
+  cron_location: "Local"
+
+ssh:
+  # 127.0.0.1's host keys, written by bootstrap.sh from /etc/ssh.
+  known_hosts_file: /home/<user>/bop/data/known_hosts
+
+metadata:
+  driver: sqlite
+  dsn: /home/<user>/bop/data/metadata.db
+  event_retention: 2160h # 90 days
+
+# Loopback only, read scope only: used by bop-update to avoid restarting
+# mid-backup, and reachable for inspection over an SSH tunnel. No write
+# tokens are configured, so nothing can trigger or reconfigure over it.
+api:
+  enabled: true
+  addr: "127.0.0.1:9311"
+  tokens_file: /home/<user>/bop/data/api-read-token
+
+metrics:
+  port: 9310
+  path: /metrics
+
+logging:
+  level: info
+  format: json
+
+verification:
+  enabled: false

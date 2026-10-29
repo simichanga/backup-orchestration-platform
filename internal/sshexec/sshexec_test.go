@@ -2,7 +2,9 @@ package sshexec
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
@@ -58,12 +60,15 @@ func generateHostKey(t *testing.T) ssh.Signer {
 // verification, not authentication - and for an "exec" request writes a
 // fixed line to the channel before reporting success. Returns the
 // listener's address and the server's real host key.
-func startTestSSHServer(t *testing.T) (addr string, hostSigner ssh.Signer) {
+func startTestSSHServer(t *testing.T, extraHostKeys ...ssh.Signer) (addr string, hostSigner ssh.Signer) {
 	t.Helper()
 	hostSigner = generateHostKey(t)
 
 	config := &ssh.ServerConfig{NoClientAuth: true}
 	config.AddHostKey(hostSigner)
+	for _, k := range extraHostKeys {
+		config.AddHostKey(k)
+	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -201,5 +206,33 @@ func TestRunFailsFastWhenKnownHostsFileMissing(t *testing.T) {
 
 	if err := e.Run(ctx, "echo ok", nil, io.Discard); err == nil {
 		t.Fatal("Run: expected an error for a missing known_hosts file, got nil")
+	}
+}
+
+// TestRunSucceedsWhenServerAlsoOffersUnknownKeyTypes covers a server with
+// several host keys (ecdsa + ed25519, like a stock OpenSSH install) where
+// known_hosts only records one of them. Without restricting the
+// negotiated algorithms to the recorded types, the client picks ecdsa
+// and knownhosts reports a spurious "key mismatch".
+func TestRunSucceedsWhenServerAlsoOffersUnknownKeyTypes(t *testing.T) {
+	dir := t.TempDir()
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ecdsa host key: %v", err)
+	}
+	ecSigner, err := ssh.NewSignerFromKey(ecKey)
+	if err != nil {
+		t.Fatalf("signer from ecdsa host key: %v", err)
+	}
+	addr, edSigner := startTestSSHServer(t, ecSigner)
+	knownHosts := writeKnownHostsFile(t, dir, knownhosts.Line([]string{addr}, edSigner.PublicKey()))
+	clientKey := writeClientKey(t, dir)
+
+	e := &SSHExecutor{Addr: addr, User: "test", KeyPath: clientKey, KnownHostsFile: knownHosts}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := e.Run(ctx, "echo ok", nil, io.Discard); err != nil {
+		t.Fatalf("Run: %v", err)
 	}
 }

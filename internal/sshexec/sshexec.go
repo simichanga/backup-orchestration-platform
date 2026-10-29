@@ -8,8 +8,11 @@ package sshexec
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -63,7 +66,10 @@ func (e *SSHExecutor) Run(ctx context.Context, command string, stdin io.Reader, 
 		User:            e.User,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
 		HostKeyCallback: hostKeyCallback,
-		Timeout:         10 * time.Second,
+		// Only negotiate key types known_hosts actually records for this
+		// host - see knownHostKeyAlgorithms.
+		HostKeyAlgorithms: knownHostKeyAlgorithms(hostKeyCallback, e.Addr),
+		Timeout:           10 * time.Second,
 	}
 
 	client, err := ssh.Dial("tcp", e.Addr, config)
@@ -98,4 +104,53 @@ func (e *SSHExecutor) Run(ctx context.Context, command string, stdin io.Reader, 
 		session.Close() // best-effort: forces the blocked Run to return
 		return ctx.Err()
 	}
+}
+
+// knownHostKeyAlgorithms returns the host key algorithms known_hosts holds
+// for addr. Without this, a server offering several host keys (stock
+// OpenSSH has ecdsa, ed25519 and rsa) may negotiate a type known_hosts
+// doesn't record - e.g. ecdsa when only ed25519 is listed - and
+// knownhosts then reports "key mismatch" even though the server is
+// legitimate. Returns nil (the ssh package's defaults) when the host
+// isn't known at all, leaving the "unknown host" error to the callback.
+//
+// knownhosts has no lookup API in this x/crypto version, so this probes
+// the callback with a placeholder key no real entry can match and reads
+// the recorded keys out of the resulting *knownhosts.KeyError.
+func knownHostKeyAlgorithms(cb ssh.HostKeyCallback, addr string) []string {
+	placeholder, err := ssh.NewPublicKey(ed25519.NewKeyFromSeed(make([]byte, ed25519.SeedSize)).Public())
+	if err != nil {
+		return nil
+	}
+	remote, err := net.ResolveTCPAddr("tcp", addr)
+	if err != nil {
+		return nil
+	}
+
+	var keyErr *knownhosts.KeyError
+	if !errors.As(cb(addr, remote, placeholder), &keyErr) {
+		return nil
+	}
+
+	var algos []string
+	seen := map[string]bool{}
+	add := func(a string) {
+		if !seen[a] {
+			seen[a] = true
+			algos = append(algos, a)
+		}
+	}
+	for _, k := range keyErr.Want {
+		switch t := k.Key.Type(); t {
+		case ssh.KeyAlgoRSA:
+			// An ssh-rsa key is verified via the SHA-2 signature
+			// algorithms on modern servers.
+			add(ssh.KeyAlgoRSASHA512)
+			add(ssh.KeyAlgoRSASHA256)
+			add(t)
+		default:
+			add(t)
+		}
+	}
+	return algos
 }

@@ -38,6 +38,14 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # A tag is a deploy trigger (deploy/bop-update.sh pulls releases onto
+      # the hosts), so a release must not be built from a commit that fails
+      # the same checks CI runs on main.
+      - name: Vet and test
+        run: |
+          go vet ./...
+          go test ./...
+
       - name: Build release binaries
         env:
           CGO_ENABLED: 0
@@ -64,11 +72,19 @@ jobs:
 
           (cd dist && sha256sum -- *.zip *.tar.gz > checksums.txt)
 
+      # A tag with a pre-release suffix (v1.2.3-rc.1) becomes a GitHub
+      # prerelease: deploy/bop-update.sh's "prerelease" channel (staging)
+      # picks it up, the "stable" channel (prod) - /releases/latest, which
+      # skips prereleases - does not. Promote by tagging v1.2.3 itself.
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          PRERELEASE=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            PRERELEASE=(--prerelease)
+          fi
           gh release create "${GITHUB_REF_NAME}" \
             dist/*.zip dist/*.tar.gz dist/checksums.txt \
             --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+            --generate-notes "${PRERELEASE[@]}"

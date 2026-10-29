@@ -1,0 +1,10 @@
+[Unit]
+Description=BOP pull-based updater (deploy/bop-update.sh)
+After=bop.service
+
+[Service]
+Type=oneshot
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+# BOP_CHANNEL=stable|prerelease, and any other BOP_* override.
+EnvironmentFile=-%h/bop/update.env
+ExecStart=%h/bop/bin/bop-update

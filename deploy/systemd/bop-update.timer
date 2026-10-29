@@ -1,0 +1,13 @@
+[Unit]
+Description=Check for new BOP releases
+
+[Timer]
+# Every 15 minutes, jittered: well inside GitHub's 60 req/h unauthenticated
+# API limit even with several hosts sharing one egress IP.
+OnBootSec=5min
+OnCalendar=*:0/15
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

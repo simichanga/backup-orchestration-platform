@@ -54,6 +54,10 @@ make fmt           List any files gofmt would reformat
   a real Postgres service container (`BOP_TEST_POSTGRES_DSN` env var) to
   cover the `metadata.driver: postgres` path - see
   `internal/metadata/metadata_test.go`'s `openTestStore`.
+- Deployment to real hosts lives in `deploy/` (see `deploy/README.md`):
+  tag `vX.Y.Z-rc.N` -> `release.yml` publishes a prerelease -> staging's
+  `bop-update` timer installs it; tag `vX.Y.Z` -> prod. Pull-based, no
+  self-hosted runner. Linux-only, so no `.ps1` twin is needed there.
 - `TESTING.md` covers `make demo`/`scripts/try-it-out.*` for a from-scratch
   manual walkthrough with real Docker infrastructure.
 
@@ -65,8 +69,9 @@ concrete adapters behind them:
 - **`plugin.BackupPlugin`** (`internal/plugin/plugin.go`) - a data source.
   Methods: `Discover`, `Backup`, `Restore`, `Verify` (structural sanity
   check, not storage integrity), `Health`, `Metadata`. Implementations:
-  `internal/plugin/postgres`, `internal/plugin/filesystem`,
-  `internal/plugin/shellcmd`. Phase 1: compiled directly into the binary,
+  `internal/plugin/postgres`, `internal/plugin/mariadb`,
+  `internal/plugin/filesystem`, `internal/plugin/informix`
+  (`internal/plugin/shellcmd` is a shared quoting helper, not a plugin). Phase 1: compiled directly into the binary,
   registered in-process via `ctl.RegisterPlugin(...)` in
   `internal/cli/wiring.go`. The controller never contains source-specific
   logic - adding a plugin never touches controller code.
