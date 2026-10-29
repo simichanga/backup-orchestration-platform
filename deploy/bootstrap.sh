@@ -18,6 +18,11 @@
 #   - ~/.ssh/bop_vault + a `bop-vault` ~/.ssh/config alias for restic's
 #     sftp backend, with the vault's host key pinned from VAULT_KNOWN_HOSTS
 #   - restic repository password and API read token (mode 600, never printed)
+#
+# Run again with VAULT_ALIAS=bop-<name> to add a further destination for a
+# config.yaml storage.repositories entry (e.g. bop-logs): it gets its own
+# key (~/.ssh/bop_<name>), pinned host keys (data/<name>_known_hosts) and
+# repository password (~/bop/restic-password-<name>).
 #   - systemd --user units, linger, and the updater timer
 #
 # It does NOT write config.yaml/inventory.yaml (host-specific - see
@@ -29,6 +34,12 @@ set -euo pipefail
 
 RESTIC_VERSION="${RESTIC_VERSION:-0.19.1}"
 BOP_CHANNEL="${BOP_CHANNEL:-stable}"
+VAULT_ALIAS="${VAULT_ALIAS:-bop-vault}"
+[[ "$VAULT_ALIAS" =~ ^bop-[a-z0-9_-]+$ ]] || { echo "VAULT_ALIAS must look like bop-<name>" >&2; exit 1; }
+dest="${VAULT_ALIAS#bop-}"
+dest_key="$HOME/.ssh/bop_$dest"
+dest_known_hosts="$HOME/bop/data/${dest}_known_hosts"
+if [[ "$dest" == vault ]]; then dest_password="$HOME/bop/restic-password"; else dest_password="$HOME/bop/restic-password-$dest"; fi
 : "${VAULT_HOST:?set VAULT_HOST}" "${VAULT_USER:?set VAULT_USER}" "${VAULT_KNOWN_HOSTS:?set VAULT_KNOWN_HOSTS (file with the vault host key lines)}"
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,30 +76,30 @@ for k in /etc/ssh/ssh_host_*_key.pub; do
 	echo "127.0.0.1 $(awk '{print $1, $2}' "$k")"
 done >"$ROOT/data/known_hosts"
 
-# --- restic sftp backend to the vault -------------------------------------------
-[[ -f "$HOME/.ssh/bop_vault" ]] || ssh-keygen -q -t ed25519 -N '' -C "bop-vault@$(hostname)" -f "$HOME/.ssh/bop_vault"
-cp "$VAULT_KNOWN_HOSTS" "$ROOT/data/vault_known_hosts"
+# --- restic sftp backend to the destination -------------------------------------
+[[ -f "$dest_key" ]] || ssh-keygen -q -t ed25519 -N '' -C "$VAULT_ALIAS@$(hostname)" -f "$dest_key"
+cp "$VAULT_KNOWN_HOSTS" "$dest_known_hosts"
 touch "$HOME/.ssh/config"
-if ! grep -qE '^Host bop-vault$' "$HOME/.ssh/config"; then
+if ! grep -qE "^Host $VAULT_ALIAS\$" "$HOME/.ssh/config"; then
 	cp -p "$HOME/.ssh/config" "$HOME/.ssh/config.bak-$(date +%Y%m%d%H%M%S)"
 	cat >>"$HOME/.ssh/config" <<EOF
 
-# BOP backup vault (restic sftp backend) - managed by deploy/bootstrap.sh
-Host bop-vault
+# BOP backup destination (restic sftp backend) - managed by deploy/bootstrap.sh
+Host $VAULT_ALIAS
   HostName $VAULT_HOST
   User $VAULT_USER
-  IdentityFile ~/.ssh/bop_vault
+  IdentityFile $dest_key
   IdentitiesOnly yes
   BatchMode yes
   StrictHostKeyChecking yes
-  UserKnownHostsFile ~/bop/data/vault_known_hosts
+  UserKnownHostsFile $dest_known_hosts
   ServerAliveInterval 30
 EOF
-	log "added bop-vault ssh alias"
+	log "added $VAULT_ALIAS ssh alias"
 fi
 
 # --- secrets -------------------------------------------------------------------
-[[ -s "$ROOT/restic-password" ]] || { head -c 48 /dev/urandom | base64 -w0 >"$ROOT/restic-password"; log "generated restic repository password"; }
+[[ -s "$dest_password" ]] || { head -c 48 /dev/urandom | base64 -w0 >"$dest_password"; log "generated restic repository password ($dest_password)"; }
 [[ -s "$ROOT/data/api-read-token" ]] || { head -c 32 /dev/urandom | base64 -w0 | tr '+/' '-_' >"$ROOT/data/api-read-token"; log "generated API read token"; }
 
 # --- updater + units ----------------------------------------------------------
@@ -100,5 +111,5 @@ systemctl --user daemon-reload
 systemctl --user enable bop.service >/dev/null
 systemctl --user enable --now bop-update.timer >/dev/null
 
-log "done. Authorize this key on the vault, sftp-only:"
-echo "restrict,command=\"/usr/lib/openssh/sftp-server\" $(cat "$HOME/.ssh/bop_vault.pub")"
+log "done. Authorize this key on $VAULT_HOST, sftp-only:"
+echo "restrict,command=\"/usr/lib/openssh/sftp-server\" $(cat "$dest_key.pub")"

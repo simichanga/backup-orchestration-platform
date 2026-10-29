@@ -90,3 +90,17 @@ append-only target (e.g. `rest-server --append-only`).
    repository is unreadable.
 6. The timer installs the newest release on its channel within 15 minutes,
    or run `systemctl --user start bop-update` to do it now.
+
+## A second destination (e.g. logs on their own server)
+
+A server in `inventory.yaml` can store into a different repository than
+the default with `storage: <name>`, defined in `config.yaml` under
+`storage.repositories.<name>`. To set one up on a host:
+
+1. Run `bootstrap.sh` again with `VAULT_ALIAS=bop-<name>` and that
+   server's `VAULT_HOST`/`VAULT_USER`/`VAULT_KNOWN_HOSTS`. It adds a
+   separate key (`~/.ssh/bop_<name>`), alias, pinned host key and
+   repository password (`~/bop/restic-password-<name>`).
+2. Authorize the printed key on that server (SFTP-only, as above).
+3. Add the repository to `config.yaml`, `restic init` it, and keep a copy
+   of its password off-host.

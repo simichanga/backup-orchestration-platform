@@ -48,6 +48,9 @@ type Controller struct {
 	Events       events.Publisher // optional; defaults to &events.LogPublisher{}
 
 	factories map[string]PluginFactory
+	// storages holds the named repositories an inventory server can
+	// select via its `storage:` key; Storage is the default.
+	storages map[string]storage.StorageProvider
 }
 
 func New(inv *inventory.Inventory, md *metadata.Store, sp storage.StorageProvider, verification core.Verification, tempDir string, jobTimeout time.Duration) *Controller {
@@ -59,7 +62,31 @@ func New(inv *inventory.Inventory, md *metadata.Store, sp storage.StorageProvide
 		TempDir:      tempDir,
 		JobTimeout:   jobTimeout,
 		factories:    make(map[string]PluginFactory),
+		storages:     make(map[string]storage.StorageProvider),
 	}
+}
+
+// RegisterStorage makes an additional storage provider available under
+// name, matching an inventory.yaml server's `storage:` key.
+func (c *Controller) RegisterStorage(name string, sp storage.StorageProvider) {
+	c.storages[name] = sp
+}
+
+// StorageFor returns the storage provider host's backups live in: the
+// named one its inventory entry selects, else the default.
+func (c *Controller) StorageFor(host string) (storage.StorageProvider, error) {
+	srv, ok := c.Inventory.Servers[host]
+	if !ok {
+		return nil, fmt.Errorf("controller: host %q not found in inventory", host)
+	}
+	if srv.Storage == "" {
+		return c.Storage, nil
+	}
+	sp, ok := c.storages[srv.Storage]
+	if !ok {
+		return nil, fmt.Errorf("controller: host %q: storage %q is not defined in config.yaml storage.repositories", host, srv.Storage)
+	}
+	return sp, nil
 }
 
 // RegisterPlugin makes a plugin available to the controller under name,
@@ -166,6 +193,10 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 	if !ok {
 		return fmt.Errorf("controller: no plugin registered for %q", job.Plugin)
 	}
+	sp, err := c.StorageFor(job.Host)
+	if err != nil {
+		return err
+	}
 
 	if err := c.Metadata.UpdateJobStatus(ctx, job.ID, core.JobStatusInProgress); err != nil {
 		return fmt.Errorf("controller: mark job %s in_progress: %w", job.ID, err)
@@ -179,7 +210,7 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 		defer cancel()
 	}
 
-	pipelineErr := c.runPipeline(pipelineCtx, job, srv, factory)
+	pipelineErr := c.runPipeline(pipelineCtx, job, srv, factory, sp)
 
 	finalStatus := core.JobStatusCompleted
 	if pipelineErr != nil {
@@ -221,7 +252,7 @@ func (c *Controller) RunJob(ctx context.Context, job core.Job) error {
 // single broken database doesn't block backing up its neighbors on the
 // same host. The job is reported failed if any resource failed, but every
 // resource that did succeed still has its snapshot recorded.
-func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventory.Server, factory PluginFactory) error {
+func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventory.Server, factory PluginFactory, sp storage.StorageProvider) error {
 	cfg, err := c.resolvePluginConfig(ctx, job.Host, job.Plugin, srv)
 	if err != nil {
 		return err
@@ -245,14 +276,14 @@ func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventor
 
 	var errs []error
 	for _, res := range resources {
-		if err := c.backupResource(ctx, job, p, res, verification); err != nil {
+		if err := c.backupResource(ctx, job, p, sp, res, verification); err != nil {
 			errs = append(errs, fmt.Errorf("resource %q: %w", res.ID, err))
 		}
 	}
 
 	// Retention is a per-job step, not per-resource: run it once after all
 	// resources have been attempted, regardless of individual outcomes.
-	if err := c.Storage.ApplyRetention(ctx, job.Host, job.Policy); err != nil {
+	if err := sp.ApplyRetention(ctx, job.Host, job.Policy); err != nil {
 		errs = append(errs, fmt.Errorf("apply retention: %w", err))
 	} else {
 		c.publish(ctx, events.Event{Type: events.TypeRetentionApplied, JobID: job.ID, Host: job.Host, Plugin: job.Plugin})
@@ -266,7 +297,7 @@ func (c *Controller) runPipeline(ctx context.Context, job core.Job, srv inventor
 
 // backupResource runs one resource through Backup, Verify, checksum, Store,
 // metadata recording, storage-level Verify, and the optional restore test.
-func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.BackupPlugin, res core.Resource, verification core.Verification) error {
+func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.BackupPlugin, sp storage.StorageProvider, res core.Resource, verification core.Verification) error {
 	artifact, err := p.Backup(ctx, res)
 	if err != nil {
 		return fmt.Errorf("backup: %w", err)
@@ -302,7 +333,7 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 	// decision, see project notes) - artifact.Encrypted stays false.
 
 	c.publish(ctx, events.Event{Type: events.TypeArtifactUploadStarted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})
-	snapshotID, err := c.Storage.Store(ctx, artifact)
+	snapshotID, err := sp.Store(ctx, artifact)
 	if err != nil {
 		return fmt.Errorf("store: %w", err)
 	}
@@ -317,7 +348,7 @@ func (c *Controller) backupResource(ctx context.Context, job core.Job, p plugin.
 	// untracked by our metadata - acceptable for Phase 1, since the
 	// alternative (recording an unverified snapshot as trustworthy) is worse.
 	c.publish(ctx, events.Event{Type: events.TypeRepositoryVerificationStarted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})
-	if err := c.Storage.Verify(ctx, snapshotID); err != nil {
+	if err := sp.Verify(ctx, snapshotID); err != nil {
 		return fmt.Errorf("storage verify: %w", err)
 	}
 	c.publish(ctx, events.Event{Type: events.TypeRepositoryVerificationCompleted, JobID: job.ID, Host: job.Host, Plugin: job.Plugin, Resource: res.ID})

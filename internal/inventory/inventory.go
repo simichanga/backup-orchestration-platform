@@ -33,6 +33,11 @@ type Server struct {
 	Retention    core.Policy              `yaml:"retention"`
 	Schedule     string                   `yaml:"schedule"`
 	Verification *core.Verification       `yaml:"verification"`
+	// Storage names a config.yaml storage.repositories entry to store this
+	// server's backups in; empty means the default storage.restic one.
+	// Checked against config.yaml at startup (cli.buildApp), since the
+	// inventory alone can't see which names exist.
+	Storage string `yaml:"storage"`
 }
 
 // PluginConfig holds a plugin's host-specific settings. Contents are

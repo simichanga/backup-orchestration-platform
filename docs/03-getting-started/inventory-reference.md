@@ -40,6 +40,7 @@ hostname.
 | `retention`    | object | yes                                | Daily/weekly/monthly/yearly counts - see [Retention](#retention). |
 | `schedule`     | string | no                                 | A standard 5-field cron expression (e.g. `"0 3 * * *"`). Omit to leave this server manual-only, triggered with `bop backup`. Validated at `bop controller` startup - an invalid expression is a startup error, not a silently-never-firing schedule. |
 | `verification` | object | no                                 | Per-host override of `config.yaml`'s global `verification` block - see [Verification Override](#verification-override). |
+| `storage`      | string | no                                 | Name of a `config.yaml` `storage.repositories` entry to keep this server's backups in, instead of the default `storage.restic` repository (e.g. host logs on a different machine than database backups). Checked at startup: an undefined name fails `bop controller`/`bop backup` immediately. `bop restore` finds the right repository from the snapshot's server (or `--host`). |
 
 The `host` connects to whatever the SSH server's own host key verification
 demands - see `config.yaml`'s `ssh.known_hosts_file`

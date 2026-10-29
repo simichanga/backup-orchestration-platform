@@ -528,3 +528,51 @@ func TestRunJobSurvivesPanickingEventPublisher(t *testing.T) {
 		t.Errorf("job status = %q, want completed", got.Status)
 	}
 }
+
+func TestRunJobUsesServerNamedStorage(t *testing.T) {
+	p := &stubPlugin{resources: []core.Resource{{ID: "journal"}}, backupErr: map[string]error{}, tempDir: t.TempDir()}
+	def, logs := newStubStorage(), newStubStorage()
+	inv := testInventory(nil)
+	srv := inv.Servers["prod-db"]
+	srv.Storage = "logs"
+	inv.Servers["prod-db"] = srv
+	c, md := setup(t, p, def, inv)
+	c.RegisterStorage("logs", logs)
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	if err := c.RunJob(ctx, job); err != nil {
+		t.Fatalf("RunJob: %v", err)
+	}
+
+	if len(logs.stored) != 1 || logs.retentionCall != 1 {
+		t.Errorf("named storage: stored %d, retention calls %d; want 1 and 1", len(logs.stored), logs.retentionCall)
+	}
+	if len(def.stored) != 0 || def.retentionCall != 0 {
+		t.Errorf("default storage was used (stored %d, retention %d); want untouched", len(def.stored), def.retentionCall)
+	}
+}
+
+func TestRunJobUnknownNamedStorageLeavesJobUntouched(t *testing.T) {
+	p := &stubPlugin{resources: []core.Resource{{ID: "x"}}, backupErr: map[string]error{}, tempDir: t.TempDir()}
+	inv := testInventory(nil)
+	srv := inv.Servers["prod-db"]
+	srv.Storage = "missing"
+	inv.Servers["prod-db"] = srv
+	c, md := setup(t, p, newStubStorage(), inv)
+	ctx := context.Background()
+
+	job := core.Job{ID: "job-1", Host: "prod-db", Plugin: "postgres", Status: core.JobStatusQueued, QueuedAt: time.Now().UTC()}
+	if err := md.CreateJob(ctx, job); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	if err := c.RunJob(ctx, job); err == nil || !strings.Contains(err.Error(), "storage.repositories") {
+		t.Fatalf("RunJob() = %v, want an undefined-storage error", err)
+	}
+	if got, _ := md.GetJob(ctx, "job-1"); got.Status != core.JobStatusQueued {
+		t.Errorf("job status = %q, want still queued (never started)", got.Status)
+	}
+}

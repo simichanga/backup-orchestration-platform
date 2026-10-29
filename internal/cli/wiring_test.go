@@ -171,3 +171,40 @@ metadata:
 		t.Fatalf("ListEvents = %+v, want the published event persisted via the real controller wiring", got)
 	}
 }
+
+// A server's storage: key is checked against config.yaml's
+// storage.repositories when the app is built, so a typo fails startup
+// instead of the server's first scheduled job.
+func TestBuildAppRejectsUndefinedServerStorage(t *testing.T) {
+	dir := t.TempDir()
+	invPath := writeTestFile(t, dir, "inventory.yaml", `
+servers:
+  system:
+    host: 192.168.1.100
+    storage: logz
+    plugins:
+      postgres:
+    retention:
+      daily: 7
+`)
+	cfgPath := writeTestFile(t, dir, "config.yaml", `
+inventory: `+invPath+`
+storage:
+  provider: restic
+  restic:
+    repository: /mnt/backups/prod
+    password_file: /etc/bop/restic-password.txt
+  repositories:
+    logs:
+      repository: /mnt/backups/logs
+      password_file: /etc/bop/logs-password.txt
+metadata:
+  driver: sqlite
+  dsn: `+filepath.Join(dir, "metadata.db")+`
+`)
+
+	_, err := buildApp(cfgPath)
+	if err == nil || !strings.Contains(err.Error(), `storage "logz"`) {
+		t.Fatalf("buildApp() = %v, want an undefined-storage error naming logz", err)
+	}
+}
