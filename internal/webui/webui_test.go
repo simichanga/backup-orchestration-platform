@@ -61,3 +61,29 @@ func TestHandlerServesRealAssetsAsIs(t *testing.T) {
 		t.Fatalf("GET /favicon.svg: Content-Type = %q, want an svg type", ct)
 	}
 }
+
+func TestHandlerSetsBaseFromForwardedPrefix(t *testing.T) {
+	h, err := Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+
+	cases := map[string]string{
+		"":                      `<base href="/">`,
+		"/bop":                  `<base href="/bop/">`,
+		"/tools/bop":            `<base href="/tools/bop/">`,
+		`/bop"><script>`:        `<base href="/">`,
+		"https://evil.example/": `<base href="/">`,
+	}
+	for prefix, want := range cases {
+		req := httptest.NewRequest(http.MethodGet, "/jobs/abc", nil)
+		if prefix != "" {
+			req.Header.Set("X-Forwarded-Prefix", prefix)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("prefix %q: body has no %s", prefix, want)
+		}
+	}
+}

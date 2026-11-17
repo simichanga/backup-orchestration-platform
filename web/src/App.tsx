@@ -32,6 +32,11 @@ function Router() {
   )
 }
 
+function routerBasename(): string | undefined {
+  const path = new URL(document.baseURI).pathname.replace(/\/$/, '')
+  return path || undefined
+}
+
 export function App() {
   return (
     // reducedMotion="user" makes every animation in the app - here and in
@@ -39,7 +44,7 @@ export function App() {
     // motion" preference automatically, without each component checking
     // it individually.
     <MotionConfig reducedMotion="user">
-      <BrowserRouter>
+      <BrowserRouter basename={routerBasename()}>
         <AuthProvider>
           <Router />
         </AuthProvider>

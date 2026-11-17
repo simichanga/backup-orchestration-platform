@@ -8,9 +8,12 @@
 package webui
 
 import (
+	"bytes"
 	"embed"
 	"io/fs"
 	"net/http"
+	"regexp"
+	"time"
 )
 
 //go:embed all:dist
@@ -29,13 +32,36 @@ func Handler() (http.Handler, error) {
 		return nil, err
 	}
 	fileServer := http.FileServer(http.FS(assets))
+	index, err := fs.ReadFile(assets, "index.html")
+	if err != nil {
+		return nil, err
+	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, err := fs.Stat(assets, assetPath(r.URL.Path)); err != nil {
-			r = withPath(r, "/")
+		p := assetPath(r.URL.Path)
+		if p != "index.html" {
+			if _, err := fs.Stat(assets, p); err == nil {
+				fileServer.ServeHTTP(w, r)
+				return
+			}
 		}
-		fileServer.ServeHTTP(w, r)
+		serveIndex(w, r, index)
 	}), nil
+}
+
+// A reverse proxy that mounts the UI under a sub-path (Traefik's stripPrefix
+// sets this header) gets a matching <base href>, so relative asset and API
+// URLs resolve under that path. Anything that isn't a plain path is ignored.
+var prefixPattern = regexp.MustCompile(`^(/[A-Za-z0-9._-]+)+$`)
+
+func serveIndex(w http.ResponseWriter, r *http.Request, index []byte) {
+	base := "/"
+	if prefix := r.Header.Get("X-Forwarded-Prefix"); prefixPattern.MatchString(prefix) {
+		base = prefix + "/"
+	}
+	page := bytes.Replace(index, []byte("<head>"), []byte(`<head><base href="`+base+`">`), 1)
+	w.Header().Set("Cache-Control", "no-cache")
+	http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(page))
 }
 
 func assetPath(urlPath string) string {
@@ -43,10 +69,4 @@ func assetPath(urlPath string) string {
 		return "index.html"
 	}
 	return urlPath[1:] // fs.Stat wants a path relative to the embedded root, no leading slash.
-}
-
-func withPath(r *http.Request, path string) *http.Request {
-	r2 := r.Clone(r.Context())
-	r2.URL.Path = path
-	return r2
 }

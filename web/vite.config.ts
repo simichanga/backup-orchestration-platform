@@ -8,7 +8,7 @@ import react from '@vitejs/plugin-react'
 // the actual API, never a mock.
 export default defineConfig({
   plugins: [react()],
-  base: '/',
+  base: './',
   build: {
     outDir: '../internal/webui/dist',
     emptyOutDir: true,
