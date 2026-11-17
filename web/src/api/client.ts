@@ -60,7 +60,7 @@ async function request<T>(path: string, init?: RequestInit, options?: RequestOpt
   if (token) headers.set('Authorization', `Bearer ${token}`)
   if (init?.body) headers.set('Content-Type', 'application/json')
 
-  const res = await fetch(path, { ...init, headers })
+  const res = await fetch(new URL(path.replace(/^\//, ''), document.baseURI).toString(), { ...init, headers })
 
   if (res.status === 401 && !options?.suppressGlobalUnauthorized) {
     for (const listener of unauthorizedListeners) listener()
